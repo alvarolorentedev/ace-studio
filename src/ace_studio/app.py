@@ -779,10 +779,13 @@ class AceStudio:
             await self.audio.resume()
 
     async def _toggle_audio(self, _event: ft.Event | None = None) -> None:
-        if self.audio_state == AudioState.PLAYING and self.audio:
-            await self.audio.pause()
-        else:
-            await self._resume_audio()
+        try:
+            if self.audio_state == AudioState.PLAYING and self.audio:
+                await self.audio.pause()
+            else:
+                await self._resume_audio()
+        except Exception as exc:
+            self.notice(f"Could not play this track: {exc}", True)
 
     def _audio_state_changed(self, event) -> None:
         self.audio_state = event.state
