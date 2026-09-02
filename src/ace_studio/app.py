@@ -121,7 +121,7 @@ class AceStudio:
                                 width=720,
                                 content=ft.Column(
                                     [
-                                        ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=36), ft.Text("ACE Studio", size=30, weight=ft.FontWeight.BOLD)]),
+                                        ft.Row([ft.Image(src="icon.png", width=44, height=44), ft.Text("ACE Studio", size=30, weight=ft.FontWeight.BOLD)]),
                                         ft.Text("Your local music studio", size=42, weight=ft.FontWeight.BOLD),
                                         ft.Text("ACE-Step runs on this computer. Your prompts, lyrics, references, and finished tracks stay here.", color=MUTED, size=16),
                                         self.card(
@@ -184,10 +184,10 @@ class AceStudio:
             padding=ft.Padding.only(left=12, right=12, top=26),
             content=ft.Column(
                 [
-                    ft.IconButton(ft.Icons.GRAPHIC_EQ, icon_color=GREEN, tooltip="Expand sidebar", on_click=self._toggle_sidebar)
+                    ft.Container(content=ft.Image(src="icon.png", width=36, height=36), tooltip="Expand sidebar", on_click=self._toggle_sidebar)
                     if self.sidebar_collapsed else
                     ft.Row([
-                        ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=30),
+                        ft.Image(src="icon.png", width=36, height=36),
                         ft.Text("ACE\nSTUDIO", size=15, weight=ft.FontWeight.BOLD, expand=True),
                         ft.IconButton(ft.Icons.CHEVRON_LEFT, tooltip="Collapse sidebar", on_click=self._toggle_sidebar),
                     ]),
@@ -214,7 +214,7 @@ class AceStudio:
 
         repeat_icons = {"off": ft.Icons.REPEAT, "all": ft.Icons.REPEAT_ON, "one": ft.Icons.REPEAT_ON}
         repeat_labels = {"off": "Looping off", "one": "Repeating this song", "all": "Repeating all generated songs"}
-        repeat_one_badge = ft.Badge(label="1", alignment=ft.Alignment.BOTTOM_RIGHT, bgcolor=GREEN, text_color=INK, small_size=10, large_size=14, text_style=ft.TextStyle(size=8))
+        repeat_one_badge = ft.Badge(label="1", alignment=ft.Alignment(0.35, 0.35), bgcolor=GREEN, text_color=INK, small_size=10, large_size=14, text_style=ft.TextStyle(size=8))
 
         def cycle_repeat(_event: ft.Event) -> None:
             modes = ("off", "all", "one")

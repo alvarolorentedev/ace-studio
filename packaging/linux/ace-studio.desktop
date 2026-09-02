@@ -2,7 +2,7 @@
 Name=ACE Studio
 Comment=Local AI music creation
 Exec=ace-studio
-Icon=audio-x-generic
+Icon=ace-studio
 Terminal=false
 Type=Application
 Categories=AudioVideo;Audio;
