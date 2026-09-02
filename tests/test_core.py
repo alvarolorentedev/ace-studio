@@ -17,12 +17,6 @@ from ace_studio.storage import Storage
 
 
 class CoreTest(unittest.TestCase):
-    def test_ace_metadata_is_normalized_to_generation_parameter_object(self):
-        self.assertEqual(
-            AceClient._with_param_obj({"duration": 150, "bpm": 98, "keyscale": "D minor", "timesignature": "6/8"}, instrumental=True)["param_obj"],
-            {"duration": 150, "bpm": 98, "key_scale": "D minor", "time_signature": "6/8", "instrumental": True},
-        )
-
     def test_saved_audio_is_loaded_by_file_path_before_playing(self):
         class Value:
             value = ""

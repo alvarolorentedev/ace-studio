@@ -84,39 +84,21 @@ class AceClient:
             }.items()
             if value not in (None, "")
         }
-        return self._with_param_obj(self.call(
+        return self.call(
             "POST",
             "/format_input",
             {"prompt": prompt, "lyrics": lyrics, "temperature": 0.85, "param_obj": parameters},
-        ))
+        )
 
     def create_sample(self, query: str, instrumental: bool = False) -> dict[str, Any]:
-        return self._with_param_obj(self.call(
+        return self.call(
             "POST",
             "/v1/create_sample",
             {"query": query, "instrumental": instrumental, "vocal_language": "unknown", "temperature": 0.85},
-        ), instrumental=instrumental)
+        )
 
     def random_sample(self, simple: bool = True) -> dict[str, Any]:
-        return self._with_param_obj(self.call("POST", "/create_random_sample", {"sample_type": "simple_mode" if simple else "custom_mode"}))
-
-    @staticmethod
-    def _with_param_obj(result: dict[str, Any], instrumental: bool | None = None) -> dict[str, Any]:
-        """Normalize ACE's constrained-decoding metadata into the UI contract."""
-        aliases = {
-            "duration": ("duration", "audio_duration"),
-            "bpm": ("bpm",),
-            "key_scale": ("key_scale", "keyscale"),
-            "time_signature": ("time_signature", "timesignature"),
-        }
-        parameters = {
-            name: next((result[key] for key in keys if result.get(key) not in (None, "")), None)
-            for name, keys in aliases.items()
-        }
-        parameters = {key: value for key, value in parameters.items() if value is not None}
-        if instrumental is not None:
-            parameters["instrumental"] = instrumental
-        return {**result, "param_obj": parameters}
+        return self.call("POST", "/create_random_sample", {"sample_type": "simple_mode" if simple else "custom_mode"})
 
     @staticmethod
     def audio_suffix(source: str) -> str:

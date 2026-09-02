@@ -377,23 +377,6 @@ class AceStudio:
         duration.on_change = sync_duration
         bpm.on_change = sync_bpm
 
-        def apply_metadata(result: dict) -> None:
-            parameters = result.get("param_obj") or {}
-            if parameters.get("duration") or parameters.get("audio_duration"):
-                duration.value = max(30, min(600, float(parameters.get("duration") or parameters["audio_duration"])))
-                duration_value.value = format_duration(duration.value)
-            if parameters.get("bpm"):
-                bpm.value = max(40, min(200, int(parameters["bpm"])))
-                bpm_value.value = str(int(bpm.value))
-            result_key = parameters.get("key_scale") or parameters.get("keyscale")
-            if result_key and result_key in [option.key for option in key.options]:
-                key.value = result_key
-            result_signature = parameters.get("time_signature") or parameters.get("timesignature")
-            if result_signature and result_signature in [option.key for option in signature.options]:
-                signature.value = result_signature
-            if isinstance(parameters.get("instrumental"), bool):
-                instrumental.value = parameters["instrumental"]
-
         async def improve(kind: str, button: ft.Button) -> None:
             if kind == "music" and not prompt.value.strip():
                 self.notice("Describe the music you want to improve first.", True)
@@ -419,7 +402,6 @@ class AceStudio:
                 )
                 if kind == "music":
                     prompt.value = result.get("caption") or prompt.value
-                    apply_metadata(result)
                 else:
                     lyrics.value = result.get("lyrics") or lyrics.value
                 self.notice(f"{kind.title()} improved with ACE-Step's language model.")
@@ -444,7 +426,6 @@ class AceStudio:
                 result = await asyncio.to_thread(client.create_sample, prompt.value.strip(), instrumental.value)
                 prompt.value = result.get("caption") or prompt.value
                 lyrics.value = result.get("lyrics") or lyrics.value
-                apply_metadata(result)
                 self.notice("ACE developed your idea into a complete song brief.")
             except Exception as exc:
                 self.notice(str(exc), True)
@@ -459,7 +440,6 @@ class AceStudio:
                 result = await asyncio.to_thread(client.random_sample)
                 prompt.value = result.get("caption") or result.get("prompt") or ""
                 lyrics.value = result.get("lyrics") or ""
-                apply_metadata(result)
                 self.page.update()
             except Exception as exc:
                 self.notice(str(exc), True)
