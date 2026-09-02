@@ -367,6 +367,15 @@ class RuntimeManager:
                 if staging.exists():
                     shutil.rmtree(staging, ignore_errors=True)
 
+    def install_recommended(self, progress: ProgressCallback = lambda _message, _value: None) -> RuntimeManifest:
+        manifest = self.install_latest(progress)
+        models = recommended_models(self.hardware)
+        for model in models:
+            if model and not self.model_installed(model):
+                self.download_model(model, progress)
+        self.select_models(*models)
+        return manifest
+
     def _activate(self, commit: str, source: Path) -> RuntimeManifest:
         manifest = RuntimeManifest(
             commit=commit,

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import unittest
 from io import BytesIO
@@ -77,6 +78,31 @@ class CoreTest(unittest.TestCase):
         studio.audio_state = AudioState.COMPLETED
         asyncio.run(studio._resume_audio())
         self.assertEqual(studio.audio.calls, ["play"])
+
+    def test_play_pause_control_toggles_audio_and_icon(self):
+        class Audio:
+            def __init__(self):
+                self.calls = []
+
+            async def pause(self):
+                self.calls.append("pause")
+
+            async def resume(self):
+                self.calls.append("resume")
+
+        studio = AceStudio.__new__(AceStudio)
+        studio.audio = Audio()
+        studio.audio_state = AudioState.PLAYING
+        studio.page = SimpleNamespace(update=lambda: None)
+        studio.now_meta = SimpleNamespace(value="")
+        studio.play_pause_button = SimpleNamespace(icon=None, tooltip=None)
+
+        asyncio.run(studio._toggle_audio())
+        studio._audio_state_changed(SimpleNamespace(state=AudioState.PAUSED))
+        asyncio.run(studio._toggle_audio())
+
+        self.assertEqual(studio.audio.calls, ["pause", "resume"])
+        self.assertEqual(studio.play_pause_button.tooltip, "Play")
 
     def test_repeat_modes_dispatch_on_completion(self):
         class Page:
@@ -183,6 +209,18 @@ class CoreTest(unittest.TestCase):
     def test_16gb_mac_uses_small_language_model(self):
         report = HardwareReport("Darwin", "arm64", "arm", 16, "Apple Silicon", RuntimeProfile.MACOS_MLX, True)
         self.assertEqual(recommended_models(report), ("acestep-v15-turbo", "acestep-5Hz-lm-0.6B"))
+
+    def test_install_downloads_and_selects_recommended_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            runtime.hardware = HardwareReport("Darwin", "arm64", "arm", 16, "Apple Silicon", RuntimeProfile.MACOS_MLX, True)
+            with patch.object(runtime, "install_latest"), patch.object(runtime, "download_model") as download:
+                runtime.install_recommended()
+            self.assertEqual(
+                [call.args[0] for call in download.call_args_list],
+                ["acestep-v15-turbo", "acestep-5Hz-lm-0.6B"],
+            )
+            self.assertEqual(json.loads(runtime.model_settings_file.read_text())["lm"], "acestep-5Hz-lm-0.6B")
 
     def test_model_selection_is_validated_and_persisted(self):
         with tempfile.TemporaryDirectory() as directory:

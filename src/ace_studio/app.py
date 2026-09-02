@@ -100,7 +100,7 @@ class AceStudio:
                 loop.call_soon_threadsafe(paint)
 
             try:
-                await asyncio.to_thread(self.runtime.install_latest, update)
+                await asyncio.to_thread(self.runtime.install_recommended, update)
                 self.views.clear()
                 self.show_shell(0)
             except Exception as exc:
@@ -202,16 +202,6 @@ class AceStudio:
             ),
         )
 
-        async def resume(_event: ft.Event) -> None:
-            try:
-                await self._resume_audio()
-            except Exception as exc:
-                self.notice(f"Could not play this track: {exc}", True)
-
-        async def pause(_event: ft.Event) -> None:
-            if self.audio:
-                await self.audio.pause()
-
         repeat_icons = {"off": ft.Icons.REPEAT, "all": ft.Icons.REPEAT_ON, "one": ft.Icons.REPEAT_ON}
         repeat_labels = {"off": "Looping off", "one": "Repeating this song", "all": "Repeating all generated songs"}
         repeat_one_badge = ft.Badge(label="1", alignment=ft.Alignment(0.35, 0.35), bgcolor=GREEN, text_color=INK, small_size=10, large_size=14, text_style=ft.TextStyle(size=8))
@@ -243,33 +233,42 @@ class AceStudio:
             tooltip=repeat_labels[self.repeat_mode],
             on_click=cycle_repeat,
         )
+        self.play_pause_button = ft.IconButton(
+            ft.Icons.PAUSE if self.audio_state == AudioState.PLAYING else ft.Icons.PLAY_ARROW,
+            icon_color=INK,
+            bgcolor=GREEN,
+            icon_size=24,
+            tooltip="Pause" if self.audio_state == AudioState.PLAYING else "Play",
+            on_click=self._toggle_audio,
+        )
 
         player = ft.Container(
-            height=104,
+            height=88,
             bgcolor="#101413",
             border=ft.Border(top=ft.BorderSide(1, BORDER)),
-            padding=ft.Padding.symmetric(horizontal=22),
+            padding=ft.Padding.symmetric(horizontal=18),
             content=ft.Row(
                 [
-                    ft.Container(width=66, height=66, border_radius=8, gradient=ft.LinearGradient(colors=["#523BC6", "#E05480", "#F2A75F"]), content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white", size=28), alignment=ft.Alignment.CENTER),
+                    ft.Container(width=56, height=56, border_radius=8, gradient=ft.LinearGradient(colors=["#523BC6", "#E05480", "#F2A75F"]), content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white", size=24), alignment=ft.Alignment.CENTER),
                     ft.Column([self.now_title, self.now_meta], spacing=4, alignment=ft.MainAxisAlignment.CENTER, width=245),
                     ft.Column(
                         [
                             ft.Row([
                                 ft.IconButton(ft.Icons.SKIP_PREVIOUS, tooltip="Previous", on_click=lambda _e: self.page.run_task(self._skip_track, -1)),
-                                ft.IconButton(ft.Icons.PLAY_ARROW, icon_color="#08110B", bgcolor=GREEN, tooltip="Play", on_click=resume),
-                                ft.IconButton(ft.Icons.PAUSE, tooltip="Pause", on_click=pause),
+                                self.play_pause_button,
                                 ft.IconButton(ft.Icons.SKIP_NEXT, tooltip="Next", on_click=lambda _e: self.page.run_task(self._skip_track, 1)),
                                 repeat,
-                            ], alignment=ft.MainAxisAlignment.CENTER),
+                            ], alignment=ft.MainAxisAlignment.CENTER, spacing=8),
                             ft.Row([self.elapsed, self.progress, self.total], spacing=12),
                         ],
                         spacing=2,
+                        alignment=ft.MainAxisAlignment.CENTER,
                         expand=True,
                     ),
                     ft.IconButton(ft.Icons.DOWNLOAD, tooltip="Save a copy", icon_color=GREEN, on_click=lambda _event: self.page.run_task(self._download_current_track)),
                     self.status,
-                ]
+                ],
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
         )
         self.page.clean()
@@ -568,23 +567,6 @@ class AceStudio:
             collapsed_shape=ft.RoundedRectangleBorder(radius=8),
         )
 
-        recent = []
-        for item in self.storage.generations(limit=5):
-            recent.append(
-                ft.Container(
-                    padding=ft.Padding.symmetric(horizontal=10, vertical=9),
-                    border=ft.Border(bottom=ft.BorderSide(1, "#222826")),
-                    content=ft.Row([
-                        ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", icon_color="white", on_click=lambda _event, p=item["audio_path"], t=item["title"]: self.play_track(p, t)),
-                        ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["created_at"][:16], color=MUTED, size=11)], spacing=2, expand=True),
-                        ft.Text((item["metadata"].get("key_scale") or "—") + "  ·  " + str(item["metadata"].get("bpm") or "Auto") + " BPM", color=MUTED, size=11),
-                        self._track_menu(item, 0),
-                    ]),
-                )
-            )
-        if not recent:
-            recent = [ft.Container(ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, color=GREEN), ft.Text("Your latest generations will appear here.", color=MUTED)], spacing=12), padding=18)]
-
         editor = ft.Column(
             [
                 ft.Row([
@@ -607,9 +589,6 @@ class AceStudio:
                         ]),
                     ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
                 ),
-                ft.Row([ft.Container(expand=True, height=1, bgcolor=BORDER), ft.Icon(ft.Icons.GRAPHIC_EQ, color="#59635F", size=22), ft.Container(expand=True, height=1, bgcolor=BORDER)]),
-                ft.Text("Recent creations", size=15, weight=ft.FontWeight.W_600),
-                ft.Column(recent, spacing=0),
             ],
             spacing=14,
             scroll=ft.ScrollMode.AUTO,
@@ -799,8 +778,18 @@ class AceStudio:
         else:
             await self.audio.resume()
 
+    async def _toggle_audio(self, _event: ft.Event | None = None) -> None:
+        if self.audio_state == AudioState.PLAYING and self.audio:
+            await self.audio.pause()
+        else:
+            await self._resume_audio()
+
     def _audio_state_changed(self, event) -> None:
         self.audio_state = event.state
+        button = getattr(self, "play_pause_button", None)
+        if button:
+            button.icon = ft.Icons.PAUSE if event.state == AudioState.PLAYING else ft.Icons.PLAY_ARROW
+            button.tooltip = "Pause" if event.state == AudioState.PLAYING else "Play"
         self.now_meta.value = {
             AudioState.PLAYING: "Playing · ACE-Step 1.5",
             AudioState.PAUSED: "Paused",
