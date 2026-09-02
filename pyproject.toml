@@ -44,3 +44,7 @@ artifact = "ace-studio"
 [tool.flet.compile]
 app = true
 packages = true
+
+[tool.flet.flutter.pubspec.dependency_overrides]
+# 7.3.1 references NWPath.isUltraConstrained, which requires the macOS 26 SDK.
+connectivity_plus = "7.0.0"
