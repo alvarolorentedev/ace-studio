@@ -193,6 +193,8 @@ class AceClient:
                 else:
                     first = value
                     audio_paths = value.get("raw_audio_paths") or value.get("audio_paths") or []
+                if not audio_paths:
+                    raise AceApiError("Generation finished but ACE-Step did not produce an audio file. Check the runtime log for the export error.")
                 metadata = first.get("metas") or {}
                 return GenerationResult(
                     task_id=task_id,

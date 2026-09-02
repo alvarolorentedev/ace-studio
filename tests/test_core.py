@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 import unittest
 from io import BytesIO
@@ -211,6 +212,24 @@ class CoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(Path(RuntimeManager(Storage(Path(directory)))._uv()).is_file())
 
+    def test_packaged_macos_runtime_can_find_homebrew_ffmpeg(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            source = runtime.storage.runtime_dir / "versions" / "commit"
+            source.mkdir(parents=True)
+            runtime._activate("commit", source)
+            with (
+                patch("ace_studio.runtime.sys.platform", "darwin"),
+                patch.object(runtime, "_stage_bridge", return_value=source / "bridge.py"),
+                patch.object(runtime, "selected_models", return_value=("acestep-v15-turbo", None)),
+                patch("ace_studio.runtime.subprocess.Popen") as popen,
+            ):
+                runtime.start()
+            self.assertEqual(
+                popen.call_args.kwargs["env"]["PATH"].split(os.pathsep),
+                ["/opt/homebrew/bin", "/usr/local/bin", *os.environ.get("PATH", "").split(os.pathsep)],
+            )
+
     def test_compiled_packaged_runtime_bridge_is_staged_as_pyc(self):
         with tempfile.TemporaryDirectory() as directory:
             assets = Path(directory) / "assets"
@@ -256,6 +275,14 @@ class CoreTest(unittest.TestCase):
         cancel_event.set()
         with self.assertRaises(GenerationCancelled):
             AceClient(1, "token").wait("job", cancel_event=cancel_event)
+
+    def test_generation_success_without_audio_is_an_error(self):
+        class Client(AceClient):
+            def task_status(self, _task_id):
+                return {"status": 1, "result": [{"file": ""}], "error": None}
+
+        with self.assertRaisesRegex(AceApiError, "did not produce an audio file"):
+            Client(1, "token").wait("job")
 
     def test_generated_audio_is_downloaded_to_the_persistent_library(self):
         class Response(BytesIO):
