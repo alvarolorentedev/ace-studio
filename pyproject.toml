@@ -1,7 +1,7 @@
 [project]
 name = "ace-studio"
 version = "0.1.0"
-description = "A polished desktop client for local ACE-Step 1.5 music generation"
+description = "A polished desktop client for ACE-Step 1.5 music generation"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 license = {file = "LICENSE"}
@@ -24,7 +24,7 @@ packages = ["src/ace_studio"]
 [tool.flet]
 product = "ACE Studio"
 company = "ACE Studio"
-description = "Local AI music creation powered by ACE-Step 1.5"
+description = "AI music creation powered by ACE-Step 1.5"
 org = "dev.alvarolorente"
 bundle_id = "dev.alvarolorente.ace_studio"
 

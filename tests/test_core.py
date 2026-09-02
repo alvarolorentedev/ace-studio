@@ -9,13 +9,19 @@ from unittest.mock import patch
 from flet_audio import AudioState
 
 from ace_studio.api import AceApiError, AceClient
-from ace_studio.app import AceStudio
+from ace_studio.app import AceStudio, description_parameters
 from ace_studio.models import GenerationRequest, HardwareReport, RuntimeProfile
 from ace_studio.runtime import RuntimeManager, recommended_models
 from ace_studio.storage import Storage
 
 
 class CoreTest(unittest.TestCase):
+    def test_description_parameters_extract_generation_inspector_values(self):
+        self.assertEqual(
+            description_parameters("Duration: 2:30; tempo: 98; key: D minor; meter: 6/8; instrumental: true"),
+            {"duration": 150.0, "bpm": 98.0, "key_scale": "D minor", "time_signature": "6/8", "instrumental": True},
+        )
+
     def test_saved_audio_is_loaded_by_file_path_before_playing(self):
         class Value:
             value = ""

@@ -21,7 +21,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: {python-version: "3.12"}
       - if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install --yes libgtk-3-dev
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-3-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
       - run: uv sync
       - run: uv run python scripts/stage_runtime.py
       - run: uv run flet build ${{ matrix.target }} --yes --output build/${{ matrix.target }}

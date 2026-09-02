@@ -1,6 +1,6 @@
 # ACE Studio
 
-ACE Studio is a private, Spotify-inspired desktop client for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5). It installs and updates ACE-Step inside the app, selects a backend from the detected hardware, and stores generated music in a local SQLite library.
+ACE Studio is a Spotify-inspired desktop client for [ACE-Step 1.5](https://github.com/ace-step/ACE-Step-1.5). It installs and updates ACE-Step inside the app, selects a backend from the detected hardware, and stores generated music in its library.
 
 ## Run from source
 
@@ -22,6 +22,6 @@ uv run flet build windows src
 uv run flet build linux src
 ```
 
-Release automation produces an unsigned macOS DMG, Windows installer EXE, and Debian package. Data lives under the native application-data folder. The ACE API listens only on `127.0.0.1` and requires a random token generated for each launch. No telemetry is collected.
+Release automation produces an unsigned macOS DMG, Windows installer EXE, and Debian package.
 
 ACE-Step is downloaded from its official repository and retains its upstream license. Model downloads are subject to their respective licenses.

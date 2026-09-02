@@ -23,6 +23,23 @@ BORDER = "#303735"
 MUTED = "#A9B0AD"
 
 
+def description_parameters(description: str) -> dict[str, str | float | bool]:
+    """Extract explicit generation settings included in an ACE description."""
+    parameters: dict[str, str | float | bool] = {}
+    if match := re.search(r"\b(?:duration|length|audio_duration)\s*[:=]\s*(\d+(?::\d{2})?(?:\.\d+)?)\s*(?:seconds?|secs?|s)?\b", description, re.I):
+        minutes, _, seconds = match.group(1).partition(":")
+        parameters["duration"] = float(minutes) * 60 + float(seconds) if seconds else float(minutes)
+    if match := re.search(r"\b(?:bpm|tempo)\s*[:=]\s*(\d{2,3})\b", description, re.I):
+        parameters["bpm"] = float(match.group(1))
+    if match := re.search(r"\b(?:key|key_scale|keyscale)\s*[:=]\s*([A-G](?:#|b)?\s*(?:major|minor))\b", description, re.I):
+        parameters["key_scale"] = match.group(1)
+    if match := re.search(r"\b(?:time[ _-]?signature|timesignature|meter)\s*[:=]\s*(\d+\s*/\s*\d+)\b", description, re.I):
+        parameters["time_signature"] = match.group(1).replace(" ", "")
+    if match := re.search(r"\binstrumental\s*[:=]\s*(true|false)\b", description, re.I):
+        parameters["instrumental"] = match.group(1).lower() == "true"
+    return parameters
+
+
 class AceStudio:
     def __init__(self, page: ft.Page) -> None:
         self.page = page
@@ -31,7 +48,7 @@ class AceStudio:
         self.client: AceClient | None = None
         self.views: dict[int, ft.Control] = {}
         self.content = ft.Container(expand=True)
-        self.status = ft.Text("Local · private", color=MUTED, size=12)
+        self.status = ft.Text("Ready", color=MUTED, size=12)
         self.now_title = ft.Text("Nothing playing", weight=ft.FontWeight.W_600)
         self.now_meta = ft.Text("Choose a track from your library", size=11, color=MUTED)
         self.elapsed = ft.Text("0:00", size=11, color=MUTED)
@@ -86,7 +103,7 @@ class AceStudio:
         async def install(_event: ft.Event) -> None:
             button.disabled = True
             progress.value = None
-            log.value = "Preparing the private local runtime…"
+            log.value = "Preparing ACE-Step…"
             self.page.update()
             loop = asyncio.get_running_loop()
 
@@ -122,8 +139,8 @@ class AceStudio:
                                 content=ft.Column(
                                     [
                                         ft.Row([ft.Image(src="icon.png", width=44, height=44), ft.Text("ACE Studio", size=30, weight=ft.FontWeight.BOLD)]),
-                                        ft.Text("Your local music studio", size=42, weight=ft.FontWeight.BOLD),
-                                        ft.Text("ACE-Step runs on this computer. Your prompts, lyrics, references, and finished tracks stay here.", color=MUTED, size=16),
+                                        ft.Text("Your music studio", size=42, weight=ft.FontWeight.BOLD),
+                                        ft.Text("Install ACE-Step, choose a hardware profile, and start creating.", color=MUTED, size=16),
                                         self.card(
                                             ft.Text("Hardware profile", size=20, weight=ft.FontWeight.W_600),
                                             ft.ListTile(leading=ft.Icon(ft.Icons.MEMORY, color=GREEN), title=ft.Text(report.summary), subtitle=ft.Text(report.profile.value)),
@@ -195,7 +212,6 @@ class AceStudio:
                     *nav,
                     ft.Container(expand=True),
                     bottom_item("Settings", ft.Icons.SETTINGS, lambda _e: self.page.show_dialog(self.settings_dialog())),
-                    ft.Row([ft.Icon(ft.Icons.LOCK, size=14, color=GREEN), ft.Text("Runs locally", visible=not self.sidebar_collapsed, size=11, color=MUTED)], spacing=8),
                     ft.Container(height=16),
                 ],
                 spacing=5,
@@ -345,7 +361,7 @@ class AceStudio:
         generation_progress = ft.ProgressBar(value=0, color=GREEN, bgcolor="#34403B")
         generation_stage = ft.Text("Preparing ACE-Step", size=16, weight=ft.FontWeight.W_600)
         generation_percent = ft.Text("0%", color=GREEN, weight=ft.FontWeight.BOLD)
-        generation_detail = ft.Text("Loading local models…", color=MUTED, size=12)
+        generation_detail = ft.Text("Loading models…", color=MUTED, size=12)
         generation_eta = ft.Text("Estimating finish time…", color=MUTED, size=12)
         generation_actions = ft.Row(visible=False, wrap=True)
         generation_feedback = ft.Container(
@@ -378,18 +394,23 @@ class AceStudio:
         bpm.on_change = sync_bpm
 
         def apply_metadata(result: dict) -> None:
-            if result.get("duration"):
-                duration.value = max(30, min(600, float(result["duration"])))
+            parameters = description_parameters(result.get("description") or result.get("caption") or result.get("prompt") or "")
+            parameters.update(result.get("param_obj") or result.get("parameters") or {})
+            parameters.update(result)
+            if parameters.get("duration") or parameters.get("audio_duration"):
+                duration.value = max(30, min(600, float(parameters.get("duration") or parameters["audio_duration"])))
                 duration_value.value = format_duration(duration.value)
-            if result.get("bpm"):
-                bpm.value = max(40, min(200, int(result["bpm"])))
+            if parameters.get("bpm"):
+                bpm.value = max(40, min(200, int(parameters["bpm"])))
                 bpm_value.value = str(int(bpm.value))
-            result_key = result.get("key_scale") or result.get("keyscale")
+            result_key = parameters.get("key_scale") or parameters.get("keyscale")
             if result_key and result_key in [option.key for option in key.options]:
                 key.value = result_key
-            result_signature = result.get("time_signature") or result.get("timesignature")
+            result_signature = parameters.get("time_signature") or parameters.get("timesignature")
             if result_signature and result_signature in [option.key for option in signature.options]:
                 signature.value = result_signature
+            if isinstance(parameters.get("instrumental"), bool):
+                instrumental.value = parameters["instrumental"]
 
         async def improve(kind: str, button: ft.Button) -> None:
             if kind == "music" and not prompt.value.strip():
@@ -419,13 +440,13 @@ class AceStudio:
                     apply_metadata(result)
                 else:
                     lyrics.value = result.get("lyrics") or lyrics.value
-                self.notice(f"{kind.title()} improved with ACE-Step's local language model.")
+                self.notice(f"{kind.title()} improved with ACE-Step's language model.")
             except Exception as exc:
                 self.notice(str(exc), True)
             finally:
                 button.disabled = False
                 button.content = original
-                self.status.value = "Local · private"
+                self.status.value = "Ready"
                 self.page.update()
 
         async def develop_idea(_event: ft.Event) -> None:
@@ -497,7 +518,7 @@ class AceStudio:
             generation_progress.value = None
             generation_stage.value = "Starting ACE-Step"
             generation_percent.value = "—"
-            generation_detail.value = "Loading the local model and submitting your song…"
+            generation_detail.value = "Loading the model and submitting your song…"
             generation_eta.value = "First load can take several minutes"
             generation_actions.controls.clear()
             generation_actions.visible = False
@@ -549,7 +570,7 @@ class AceStudio:
             finally:
                 generate.disabled = False
                 generate.content = "Generate"
-                self.status.value = "Local · private"
+                self.status.value = "Ready"
                 self.page.update()
 
         generate.on_click = submit
@@ -582,9 +603,8 @@ class AceStudio:
         editor = ft.Column(
             [
                 ft.Row([
-                    self.heading("Create", "Turn your ideas into music with ACE-Step 1.5 running locally."),
+                    self.heading("Create", "Turn your ideas into music with ACE-Step 1.5."),
                     ft.Container(expand=True),
-                    ft.SegmentedButton(selected=["simple"], segments=[ft.Segment(value="simple", label=ft.Text("Simple")), ft.Segment(value="custom", label=ft.Text("Custom"))]),
                 ]),
                 generation_feedback,
                 ft.Container(
@@ -633,7 +653,6 @@ class AceStudio:
                 ft.Container(height=6),
                 advanced,
                 ft.Container(expand=True),
-                ft.Row([ft.Icon(ft.Icons.LOCK, color=GREEN, size=14), ft.Text("All AI processing stays on this device", size=11, color=MUTED, expand=True)]),
             ], spacing=12),
         )
         return ft.Row(
@@ -746,7 +765,7 @@ class AceStudio:
     def _generate(self, request: GenerationRequest, progress_callback=None):
         client = self._ensure_client()
         if progress_callback:
-            progress_callback({"progress": 0, "stage": "Submitting", "progress_text": "Adding your song to the local generation queue"})
+            progress_callback({"progress": 0, "stage": "Submitting", "progress_text": "Adding your song to the generation queue"})
         task_id = client.generate(request)
         self.storage.record_job(task_id, "running", request.fields())
         started = time.monotonic()
@@ -790,7 +809,7 @@ class AceStudio:
     def _audio_state_changed(self, event) -> None:
         self.audio_state = event.state
         self.now_meta.value = {
-            AudioState.PLAYING: "Playing · ACE-Step 1.5 · Local generation",
+            AudioState.PLAYING: "Playing · ACE-Step 1.5",
             AudioState.PAUSED: "Paused",
             AudioState.COMPLETED: "Finished · Press play to replay",
         }.get(event.state, self.now_meta.value)
@@ -891,7 +910,7 @@ class AceStudio:
                 ft.AlertDialog(
                     modal=True,
                     title=ft.Text(f"Delete {title}?"),
-                    content=ft.Text("This permanently removes the track and its local audio file."),
+                    content=ft.Text("This permanently removes the track and its audio file."),
                     actions=[ft.TextButton("Cancel", on_click=cancel), ft.Button("Delete", icon=ft.Icons.DELETE_OUTLINE, bgcolor="#8C2431", color="white", on_click=confirm)],
                 )
             )
@@ -913,7 +932,7 @@ class AceStudio:
                     )
                 )
             if not rows.controls:
-                rows.controls.append(self.card(ft.Icon(ft.Icons.MUSIC_NOTE, color=GREEN, size=44), ft.Text("Your finished tracks will appear here."), ft.Text("Create your first song to begin a local library.", color=MUTED)))
+                rows.controls.append(self.card(ft.Icon(ft.Icons.MUSIC_NOTE, color=GREEN, size=44), ft.Text("Your finished tracks will appear here."), ft.Text("Create your first song to begin your library.", color=MUTED)))
             self.page.update()
 
         search.on_change = load
@@ -945,7 +964,7 @@ class AceStudio:
 
     def train_view(self) -> ft.Control:
         return ft.Column([
-            self.heading("Train an adapter", "Fine-tune LoRA or LoKr locally with ACE-Step's training pipeline."),
+            self.heading("Train an adapter", "Fine-tune LoRA or LoKr with ACE-Step's training pipeline."),
             ft.Row([
                 self.card(ft.Text("1 · Dataset", size=20, weight=ft.FontWeight.W_600), ft.Text("Add audio, captions, and optional lyrics. ACE-Step will preprocess the dataset.", color=MUTED), ft.Button("Choose dataset folder", icon=ft.Icons.FOLDER_OPEN), ft.Text("No dataset selected", color=MUTED), expand=True),
                 self.card(ft.Text("2 · Training", size=20, weight=ft.FontWeight.W_600), ft.Dropdown(label="Adapter", value="lora", options=[ft.DropdownOption(key="lora", text="LoRA"), ft.DropdownOption(key="lokr", text="LoKr")]), ft.TextField(label="Steps", value="1000"), ft.TextField(label="Learning rate", value="0.0001"), ft.Button("Start training", icon=ft.Icons.SCIENCE, bgcolor=GREEN, color="#07140B"), expand=True),
@@ -1008,7 +1027,7 @@ class AceStudio:
                 await asyncio.to_thread(self.runtime.download_model, name, progress)
                 button.content = "Installed"
                 button.icon = ft.Icons.CHECK
-                detail.value = "Installed locally"
+                detail.value = "Installed"
                 dropdown = dit if name in DIT_MODELS else lm
                 if name not in [option.key for option in dropdown.options]:
                     dropdown.options.append(ft.DropdownOption(key=name, text=name))
@@ -1039,7 +1058,7 @@ class AceStudio:
         )
 
         content = ft.ListView([
-            self.heading("Settings", "Models, runtime, storage, and privacy."),
+            self.heading("Settings", "Models, runtime, and storage."),
             ft.Text("Models & runtime", size=20, weight=ft.FontWeight.W_600),
             ft.Row([
                 self.card(ft.Icon(ft.Icons.MEMORY, color=GREEN, size=36), ft.Text("Hardware", size=20, weight=ft.FontWeight.W_600), ft.Text(report.summary), ft.Text(report.profile.value, color=MUTED), expand=True),
@@ -1059,7 +1078,6 @@ class AceStudio:
             ),
             self.card(ft.Text("Available models", size=20, weight=ft.FontWeight.W_600), *model_rows),
             self.card(ft.Text("Storage", size=20, weight=ft.FontWeight.W_600), ft.ListTile(leading=ft.Icon(ft.Icons.FOLDER), title=ft.Text(str(self.storage.root)), subtitle=ft.Text("Runtime, models, library, training data, and logs"))),
-            self.card(ft.Text("Privacy", size=20, weight=ft.FontWeight.W_600), ft.Switch(label="Allow anonymous analytics", value=False, disabled=True), ft.Text("ACE Studio has no analytics and binds ACE-Step only to 127.0.0.1 with a per-launch token.", color=MUTED)),
             self.card(ft.Text("About", size=20, weight=ft.FontWeight.W_600), ft.Text("ACE Studio 0.1.0"), ft.Text("ACE-Step is installed from its official upstream repository and keeps its own license files.", color=MUTED)),
         ], spacing=18, width=780, height=610)
         return ft.AlertDialog(modal=True, content=content, actions=[ft.TextButton("Close", on_click=close)])
