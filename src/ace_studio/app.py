@@ -1071,7 +1071,7 @@ class AceStudio:
             ),
             self.card(ft.Text("Available models", size=20, weight=ft.FontWeight.W_600), *model_rows),
             self.card(ft.Text("Storage", size=20, weight=ft.FontWeight.W_600), ft.ListTile(leading=ft.Icon(ft.Icons.FOLDER), title=ft.Text(str(self.storage.root)), subtitle=ft.Text("Runtime, models, library, training data, and logs"))),
-            self.card(ft.Text("About", size=20, weight=ft.FontWeight.W_600), ft.Text("ACE Studio 0.1.0"), ft.Text("ACE-Step is installed from its official upstream repository and keeps its own license files.", color=MUTED)),
+            self.card(ft.Text("About", size=20, weight=ft.FontWeight.W_600), ft.Text("ACE Studio 0.1.3"), ft.Text("ACE-Step is installed from its official upstream repository and keeps its own license files.", color=MUTED)),
         ], spacing=18, width=780, height=610)
         return ft.AlertDialog(modal=True, content=content, actions=[ft.TextButton("Close", on_click=close)])
 

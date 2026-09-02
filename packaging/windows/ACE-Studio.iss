@@ -1,5 +1,5 @@
 #define AppName "ACE Studio"
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.3"
 [Setup]
 AppId={{2FA9BF09-D8B3-44D2-A444-0ECFE5CF98F9}
 AppName={#AppName}
