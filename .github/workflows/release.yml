@@ -1,0 +1,35 @@
+name: Build desktop installers
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - {os: macos-15, target: macos}
+          - {os: windows-2025, target: windows}
+          - {os: ubuntu-24.04, target: linux}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: {python-version: "3.12"}
+      - run: uv sync
+      - run: uv run python scripts/stage_runtime.py
+      - run: uv run flet build ${{ matrix.target }} src --yes
+      - if: matrix.target == 'macos'
+        run: hdiutil create -volname "ACE Studio" -srcfolder "build/macos/ACE Studio.app" -ov -format UDZO build/ACE-Studio-macOS.dmg
+      - if: matrix.target == 'windows'
+        shell: pwsh
+        run: iscc packaging/windows/ACE-Studio.iss
+      - if: matrix.target == 'linux'
+        run: bash packaging/linux/build-deb.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ace-studio-${{ matrix.target }}
+          path: |
+            build/*.dmg
+            build/*.exe
+            build/*.deb

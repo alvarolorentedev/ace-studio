@@ -1,0 +1,7 @@
+Package: ace-studio
+Version: 0.1.0
+Section: sound
+Priority: optional
+Architecture: amd64
+Maintainer: ACE Studio
+Description: Local ACE-Step 1.5 music generation studio
