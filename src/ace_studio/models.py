@@ -116,6 +116,7 @@ class GenerationRequest:
         if self.repaint_end is not None:
             values["repainting_end"] = self.repaint_end
         values.update(self.advanced)
+        values["audio_format"] = "wav"
         return {key: str(value).lower() if isinstance(value, bool) else str(value) for key, value in values.items()}
 
 
@@ -128,4 +129,3 @@ class GenerationResult:
     lyrics: str
     metadata: dict[str, Any]
     seed: str = ""
-

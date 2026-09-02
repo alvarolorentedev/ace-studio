@@ -674,7 +674,7 @@ class AceStudio:
             icon=ft.Icons.MORE_HORIZ,
             tooltip="Track actions",
             items=[
-                ft.PopupMenuItem(content="Play", icon=ft.Icons.PLAY_ARROW, on_click=lambda _e: self.play_track(item["audio_path"], item["title"], item["id"])),
+                ft.PopupMenuItem(content="Play", icon=ft.Icons.PLAY_ARROW, on_click=lambda _e: self.play_track(item["audio_path"], item["title"])),
                 ft.PopupMenuItem(content="Download", icon=ft.Icons.DOWNLOAD, on_click=lambda _e: self.page.run_task(self._download_track, item["audio_path"], item["title"])),
                 ft.PopupMenuItem(content="Rename", icon=ft.Icons.EDIT, on_click=lambda _e: self._rename_track(item, view_index)),
                 ft.PopupMenuItem(content="Favorite", icon=ft.Icons.FAVORITE_BORDER, on_click=lambda _e: (self.storage.toggle_favorite(item["id"]), self.views.pop(0, None), self.show_shell(0))),
@@ -777,7 +777,7 @@ class AceStudio:
         saved_paths = []
         for number, source in enumerate(result.audio_paths, 1):
             path = Path(source)
-            target = self.storage.audio_dir / f"{task_id}-{number}{client.audio_suffix(source)}"
+            target = self.storage.audio_dir / f"{task_id}-{number}.wav"
             if path.exists():
                 shutil.copy2(path, target)
             else:
@@ -788,8 +788,8 @@ class AceStudio:
         self.storage.record_job(task_id, "complete", request.fields())
         return result
 
-    def play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
-        self.page.run_task(self._play_track, path, title, generation_id)
+    def play_track(self, path: str, title: str) -> None:
+        self.page.run_task(self._play_track, path, title)
 
     async def _resume_audio(self) -> None:
         if not self.audio:
@@ -837,18 +837,13 @@ class AceStudio:
         current = self.current_audio_path
         index = next((i for i, track in enumerate(tracks) if str(Path(track["audio_path"]).resolve()) == current), -1 if offset > 0 else 0)
         track = tracks[(index + offset) % len(tracks)]
-        await self._play_track(track["audio_path"], track["title"], track["id"])
+        await self._play_track(track["audio_path"], track["title"])
 
-    async def _play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
+    async def _play_track(self, path: str, title: str) -> None:
         try:
             source = Path(path)
             if not source.is_file():
-                if not generation_id:
-                    raise FileNotFoundError("The saved audio file is missing")
-                client = await asyncio.to_thread(self._ensure_client)
-                source = self.storage.audio_dir / f"{generation_id}{client.audio_suffix(path)}"
-                await asyncio.to_thread(client.download_audio, path, source)
-                self.storage.update_audio_path(generation_id, str(source))
+                raise FileNotFoundError("The saved audio file is missing")
             source_path = str(source.resolve())
             source_changed = self.audio is None or self.audio.src != source_path
             if self.audio is None:
@@ -866,7 +861,7 @@ class AceStudio:
                 self.audio_loaded.clear()
                 self.audio.src = source_path
             self.now_title.value = title
-            self.now_meta.value = "Loading saved MP3…"
+            self.now_meta.value = "Loading saved audio…"
             self.current_audio_path = source_path
             self.current_audio_title = title
             self.progress.value = 0
@@ -915,7 +910,7 @@ class AceStudio:
                     ft.Container(
                         bgcolor=PANEL, border_radius=10, padding=12,
                         content=ft.Row([
-                            ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", on_click=lambda _e, p=item["audio_path"], t=item["title"], i=item["id"]: self.play_track(p, t, i)),
+                            ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", on_click=lambda _e, p=item["audio_path"], t=item["title"]: self.play_track(p, t)),
                             ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["prompt"][:100] or item["task_type"], color=MUTED, size=12)], expand=True),
                             ft.Text(item["created_at"][:16], color=MUTED),
                             ft.IconButton(ft.Icons.EDIT, tooltip="Rename track", on_click=lambda _e, track=item: self._rename_track(track, 1)),
@@ -939,7 +934,7 @@ class AceStudio:
         self.page.services.append(picker)
 
         async def choose(_event: ft.Event) -> None:
-            files = await picker.pick_files(dialog_title="Choose audio", allowed_extensions=["wav", "mp3", "flac", "m4a"])
+            files = await picker.pick_files(dialog_title="Choose audio", allowed_extensions=["wav"])
             if files:
                 source.value = files[0].path
                 self.page.update()

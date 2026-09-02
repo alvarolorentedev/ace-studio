@@ -100,12 +100,6 @@ class AceClient:
     def random_sample(self, simple: bool = True) -> dict[str, Any]:
         return self.call("POST", "/create_random_sample", {"sample_type": "simple_mode" if simple else "custom_mode"})
 
-    @staticmethod
-    def audio_suffix(source: str) -> str:
-        parsed = urllib.parse.urlsplit(source)
-        filename = urllib.parse.parse_qs(parsed.query).get("path", [parsed.path])[0]
-        return Path(filename).suffix or ".wav"
-
     def download_audio(self, source: str, target: Path) -> Path:
         url = urllib.parse.urljoin(f"{self.base_url}/", source)
         if urllib.parse.urlsplit(url).netloc != urllib.parse.urlsplit(self.base_url).netloc:

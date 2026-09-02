@@ -409,8 +409,6 @@ class RuntimeManager:
                 self.port = reservation.getsockname()[1]
             self.token = secrets.token_urlsafe(32)
             environment = os.environ.copy()
-            if sys.platform == "darwin":
-                environment["PATH"] = os.pathsep.join(("/opt/homebrew/bin", "/usr/local/bin", environment.get("PATH", "")))
             environment.update(
                 {
                     "ACESTEP_API_KEY": self.token,

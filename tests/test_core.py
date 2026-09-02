@@ -1,5 +1,4 @@
 import asyncio
-import os
 import tempfile
 import unittest
 from io import BytesIO
@@ -58,8 +57,8 @@ class CoreTest(unittest.TestCase):
             self.assertEqual(studio.audio_state, AudioState.PLAYING)
 
         with tempfile.TemporaryDirectory() as directory:
-            audio = Path(directory) / "song.mp3"
-            audio.write_bytes(b"ID3")
+            audio = Path(directory) / "song.wav"
+            audio.write_bytes(b"RIFFaudio")
             asyncio.run(check(audio))
 
     def test_completed_audio_replays_instead_of_resuming_released_source(self):
@@ -117,7 +116,7 @@ class CoreTest(unittest.TestCase):
 
         studio._play_track = play
         asyncio.run(studio._skip_track(1))
-        self.assertEqual(played, [("/tmp/one.wav", "One", "one")])
+        self.assertEqual(played, [("/tmp/one.wav", "One")])
 
     def test_prompt_becomes_a_short_generation_title(self):
         self.assertEqual(
@@ -155,15 +154,14 @@ class CoreTest(unittest.TestCase):
             self.assertEqual(studio.save_picker.saved, {"file_name": "Night Drive.wav", "src_bytes": b"RIFFaudio"})
 
     def test_generation_fields_and_library_round_trip(self):
-        request = GenerationRequest("ambient jazz", bpm=92, instrumental=True, seed=7)
+        request = GenerationRequest("ambient jazz", bpm=92, instrumental=True, seed=7, advanced={"audio_format": "unexpected"})
         self.assertEqual(request.fields()["bpm"], "92")
+        self.assertEqual(request.fields()["audio_format"], "wav")
         self.assertEqual(request.fields()["use_random_seed"], "false")
         with tempfile.TemporaryDirectory() as directory:
             storage = Storage(Path(directory))
             storage.save_generation("one", "Night Bus", "text2music", "/tmp/a.wav", request.prompt, "", {"bpm": 92})
             self.assertEqual(storage.generations()[0]["metadata"]["bpm"], 92)
-            storage.update_audio_path("one", "/tmp/saved.wav")
-            self.assertEqual(storage.generations()[0]["audio_path"], "/tmp/saved.wav")
             storage.update_title("one", "Midnight Platform")
             self.assertEqual(storage.generations()[0]["title"], "Midnight Platform")
             self.assertTrue(storage.toggle_favorite("one"))
@@ -211,24 +209,6 @@ class CoreTest(unittest.TestCase):
     def test_bundled_runtime_helper_is_resolvable(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(Path(RuntimeManager(Storage(Path(directory)))._uv()).is_file())
-
-    def test_packaged_macos_runtime_can_find_homebrew_ffmpeg(self):
-        with tempfile.TemporaryDirectory() as directory:
-            runtime = RuntimeManager(Storage(Path(directory)))
-            source = runtime.storage.runtime_dir / "versions" / "commit"
-            source.mkdir(parents=True)
-            runtime._activate("commit", source)
-            with (
-                patch("ace_studio.runtime.sys.platform", "darwin"),
-                patch.object(runtime, "_stage_bridge", return_value=source / "bridge.py"),
-                patch.object(runtime, "selected_models", return_value=("acestep-v15-turbo", None)),
-                patch("ace_studio.runtime.subprocess.Popen") as popen,
-            ):
-                runtime.start()
-            self.assertEqual(
-                popen.call_args.kwargs["env"]["PATH"].split(os.pathsep),
-                ["/opt/homebrew/bin", "/usr/local/bin", *os.environ.get("PATH", "").split(os.pathsep)],
-            )
 
     def test_compiled_packaged_runtime_bridge_is_staged_as_pyc(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -296,7 +276,6 @@ class CoreTest(unittest.TestCase):
             target = Path(directory) / "song.wav"
             AceClient(8000, "secret").download_audio("/v1/audio?path=song.wav", target)
             self.assertEqual(target.read_bytes(), b"RIFFaudio")
-            self.assertEqual(AceClient.audio_suffix("/v1/audio?path=%2Ftmp%2Fsong.mp3"), ".mp3")
             with self.assertRaises(AceApiError):
                 AceClient(8000, "secret").download_audio("https://example.com/song.wav", target)
 
