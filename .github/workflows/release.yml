@@ -6,12 +6,16 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - {os: macos-15, target: macos}
           - {os: windows-2025, target: windows}
           - {os: ubuntu-24.04, target: linux}
     runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
