@@ -25,8 +25,6 @@ Release installers are unsigned. Your operating system may ask you to explicitly
 - Let ACE Studio detect Apple Silicon, NVIDIA, AMD, Intel, or CPU-only hardware and install a matching ACE-Step runtime.
 - Select and download alternate generation and language models from Settings, then check for ACE-Step updates without replacing a working runtime until the update passes a compatibility probe.
 
-The **Edit** and **Train** areas are currently interface previews; audio editing and adapter training are not yet connected to executable workflows.
-
 ## First launch
 
 1. Open ACE Studio and review the detected hardware profile and recommended models.
@@ -36,43 +34,39 @@ The **Edit** and **Train** areas are currently interface previews; audio editing
 
 The first setup can take several minutes and multiple gigabytes, depending on the selected models and connection. Later launches reuse the installed runtime and models.
 
-## A quick look
+## Using ACE Studio
 
-### Create with prompts, lyrics, and musical controls
+### Create
+
+Turn an idea into music. Describe the sound, mood, instruments, and arrangement; add structured lyrics for vocals or choose **Instrumental**. The inspector controls duration, BPM, key, time signature, versions, seed, and guidance. Generation shows live progress and can be stopped at any time.
+
+With a language model installed, use **Improve music**, **Improve lyrics**, or **Develop idea** to turn a rough starting point into a fuller song brief.
 
 ![ACE Studio's Create workspace](docs/screenshots/create.jpg)
 
-### Browse the local music library
+### Library
+
+Every completed version is copied into the local library automatically. Play tracks, search by title or prompt, favorite them, rename or delete them, and save a copy through the player’s download button.
 
 ![ACE Studio's empty Library workspace](docs/screenshots/library.jpg)
 
-### Manage hardware, models, and updates
+### Edit
 
-![ACE Studio's Settings workspace](docs/screenshots/settings.jpg)
-
-### Prepare an audio edit
+Choose a WAV file and prepare an edit request. The interface supports repaint, extend, cover, extract, LEGO, and complete modes, with an instruction and a target time range. Audio editing is currently a preview: the form is available, but **Run edit** is not yet connected to the ACE-Step workflow.
 
 ![ACE Studio's Edit workspace](docs/screenshots/edit.jpg)
 
-### Prepare LoRA or LoKr adapter training
+### Train
+
+Prepare a LoRA or LoKr adapter-training job by choosing a dataset folder and configuring its step count and learning rate. Adapter training is currently a preview: dataset selection, training, checkpoints, and logs are not yet connected to an executable workflow.
 
 ![ACE Studio's Train workspace](docs/screenshots/train.jpg)
 
-## Using ACE Studio
+### Settings
 
-### Create a track
+See the detected hardware, download supported models, choose active generation and language models, and check for an ACE-Step update. Updates are staged and probed before activation, so a failed update leaves the existing runtime active.
 
-Describe the sound, mood, instruments, and arrangement you want. Add structured lyrics if you want vocals, or switch on **Instrumental**. The inspector lets you shape the duration, tempo, key, time signature, number of versions, reproducible seed, and guidance. During generation, ACE Studio shows progress and lets you stop the run.
-
-Use **Improve music**, **Improve lyrics**, or **Develop idea** when a language model is installed and you want help refining a starting draft.
-
-### Manage your library
-
-Every completed version is copied into the local library automatically. From **Library**, you can play tracks, search by title or prompt, favorite them, rename them, delete them, or save a copy through the player’s download button.
-
-### Choose models and update ACE-Step
-
-Open **Settings** to see the detected hardware, download supported models, choose active generation and language models, or check for an ACE-Step update. Updates are staged and probed before activation, so a failed update leaves the existing runtime active.
+![ACE Studio's Settings workspace](docs/screenshots/settings.jpg)
 
 ## Local data
 
