@@ -37,14 +37,15 @@ DIT_MODELS = (
 LM_MODELS = ("acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-4B")
 
 
-def _bundled_file(name: str) -> Path | None:
+def _bundled_file(*names: str) -> Path | None:
     """Find an executable staged into Flet assets for a packaged app."""
     roots = [Path(value) for value in [os.getenv("FLET_ASSETS_DIR")] if value]
     roots.extend([Path(__file__).resolve().parents[1] / "assets", Path(sys.executable).resolve().parent / "assets"])
     for root in roots:
-        candidate = root / "bin" / name
-        if candidate.is_file():
-            return candidate
+        for name in names:
+            candidate = root / "bin" / name
+            if candidate.is_file():
+                return candidate
     return None
 
 
@@ -258,9 +259,19 @@ class RuntimeManager:
         raise RuntimeError("The bundled uv runtime helper was not found.")
 
     def _bridge(self) -> Path:
-        bridge = _bundled_file("ace_studio_bridge.py") or Path(__file__).resolve().parents[1] / "ace_studio_bridge.py"
+        bridge = _bundled_file("ace_studio_bridge.py", "ace_studio_bridge.pyc") or Path(__file__).resolve().parents[1] / "ace_studio_bridge.py"
         if not bridge.is_file():
             raise RuntimeError("ACE Studio's packaged runtime bridge was not found.")
+        return bridge
+
+    def _stage_bridge(self, source: Path) -> Path:
+        for suffix in (".py", ".pyc"):
+            bridge = source / f".ace_studio_bridge{suffix}"
+            if bridge.is_file():
+                return bridge
+        bundled = self._bridge()
+        bridge = source / f".ace_studio_bridge{bundled.suffix}"
+        shutil.copy2(bundled, bridge)
         return bridge
 
     def _run(self, command: list[str], cwd: Path, progress: ProgressCallback) -> None:
@@ -345,7 +356,7 @@ class RuntimeManager:
                     self._run([self._uv(), "sync", "--frozen", "--no-dev", "--python", "3.12"], source, progress)
                 if not self._probe(source):
                     raise RuntimeError("ACE-Step compatibility probe failed")
-                shutil.copy2(self._bridge(), source / ".ace_studio_bridge.py")
+                self._stage_bridge(source)
                 source.rename(destination)
                 progress("Runtime ready", 1.0)
                 return self._activate(commit, destination)
@@ -418,9 +429,7 @@ class RuntimeManager:
                     environment["ACESTEP_SAVE_MEMORY"] = "1"
             if manifest.profile in {RuntimeProfile.WINDOWS_XPU, RuntimeProfile.LINUX_XPU}:
                 environment.update({"PYTORCH_DEVICE": "xpu", "TORCH_COMPILE_BACKEND": "eager"})
-            bridge = source / ".ace_studio_bridge.py"
-            if not bridge.exists():
-                shutil.copy2(self._bridge(), bridge)
+            bridge = self._stage_bridge(source)
             command = [self._python(source), str(bridge), "--host", "127.0.0.1", "--port", str(self.port)]
             log = (self.storage.logs_dir / "runtime.log").open("a", encoding="utf-8")
             self.process = subprocess.Popen(command, cwd=source, env=environment, stdout=log, stderr=subprocess.STDOUT, text=True)

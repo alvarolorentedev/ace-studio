@@ -211,6 +211,20 @@ class CoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(Path(RuntimeManager(Storage(Path(directory)))._uv()).is_file())
 
+    def test_compiled_packaged_runtime_bridge_is_staged_as_pyc(self):
+        with tempfile.TemporaryDirectory() as directory:
+            assets = Path(directory) / "assets"
+            bridge = assets / "bin" / "ace_studio_bridge.pyc"
+            bridge.parent.mkdir(parents=True)
+            bridge.write_bytes(b"compiled bridge")
+            with patch.dict("os.environ", {"FLET_ASSETS_DIR": str(assets)}):
+                runtime = RuntimeManager(Storage(Path(directory) / "data"))
+                source = Path(directory) / "runtime"
+                source.mkdir()
+                staged = runtime._stage_bridge(source)
+                self.assertEqual(staged.name, ".ace_studio_bridge.pyc")
+                self.assertEqual(staged.read_bytes(), bridge.read_bytes())
+
     def test_ai_improvement_uses_upstream_format_endpoint(self):
         calls = []
 
