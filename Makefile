@@ -27,7 +27,7 @@ test: .venv/.installed ## Run the test suite
 	$(PYTHON) -m unittest discover -s tests -v
 
 check: test ## Compile Python and check patch whitespace
-	$(PYTHON) -m compileall -q src tests
+	$(PYTHON) -m compileall -q src/ace_studio src/main.py src/ace_studio_bridge.py tests
 	git diff --check
 
 build-macos: stage-runtime ## Build the macOS application bundle

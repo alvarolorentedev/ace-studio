@@ -340,10 +340,13 @@ class RuntimeManager:
                     "ACESTEP_CHECKPOINTS_DIR": str(self.storage.models_dir),
                     "ACESTEP_TMPDIR": str(self.storage.runtime_dir / "tmp"),
                     "ACESTEP_NO_INIT": "true",
-                    "ACESTEP_INIT_LLM": "auto",
+                    "ACESTEP_INIT_LLM": "true",
                     "PYTHONPATH": os.pathsep.join([str(source), environment.get("PYTHONPATH", "")]),
                 }
             )
+            _model, lm_model = recommended_models(self.hardware)
+            if lm_model:
+                environment["ACESTEP_LM_MODEL_PATH"] = lm_model
             if manifest.profile == RuntimeProfile.MACOS_MLX:
                 environment["ACESTEP_LM_BACKEND"] = "mlx"
                 if (self.hardware.memory_gb or 0) <= 16:

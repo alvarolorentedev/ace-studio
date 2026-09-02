@@ -10,6 +10,8 @@ from typing import Any, Iterable
 
 
 def default_data_root() -> Path:
+    if configured := os.environ.get("ACE_STUDIO_DATA_DIR"):
+        return Path(configured).expanduser()
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "ACE Studio"
     if sys.platform == "win32":
@@ -117,6 +119,11 @@ class Storage:
             value = connection.execute("SELECT favorite FROM generations WHERE id = ?", (generation_id,)).fetchone()
             connection.commit()
         return bool(value and value[0])
+
+    def update_audio_path(self, generation_id: str, audio_path: str) -> None:
+        with closing(self.connect()) as connection:
+            connection.execute("UPDATE generations SET audio_path = ? WHERE id = ?", (audio_path, generation_id))
+            connection.commit()
 
     def record_job(self, job_id: str, state: str, request: dict[str, Any], error: str | None = None) -> None:
         with closing(self.connect()) as connection:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import time
 from pathlib import Path
 
 import flet as ft
@@ -14,9 +15,11 @@ from .storage import Storage
 
 
 GREEN = "#1ED760"
-INK = "#0B0D0C"
-PANEL = "#151816"
-MUTED = "#A7ADA9"
+INK = "#0A0D0C"
+PANEL = "#121716"
+RAISED = "#19201E"
+BORDER = "#303735"
+MUTED = "#A9B0AD"
 
 
 class AceStudio:
@@ -25,11 +28,12 @@ class AceStudio:
         self.storage = Storage()
         self.runtime = RuntimeManager(self.storage)
         self.client: AceClient | None = None
+        self.views: dict[int, ft.Control] = {}
         self.content = ft.Container(expand=True)
         self.status = ft.Text("Local · private", color=MUTED, size=12)
         self.now_title = ft.Text("Nothing playing", weight=ft.FontWeight.W_600)
-        self.audio = Audio(volume=0.85)
-        self.page.services.append(self.audio)
+        self.now_meta = ft.Text("Choose a track from your library", size=11, color=MUTED)
+        self.audio: Audio | None = None
         self._configure()
 
     def _configure(self) -> None:
@@ -82,6 +86,7 @@ class AceStudio:
 
             try:
                 await asyncio.to_thread(self.runtime.install_latest, update)
+                self.views.clear()
                 self.show_shell(0)
             except Exception as exc:
                 button.disabled = False
@@ -128,39 +133,73 @@ class AceStudio:
 
     def show_shell(self, index: int) -> None:
         destinations = [
-            ("Create", ft.Icons.AUTO_AWESOME),
+            ("Create", ft.Icons.GRAPHIC_EQ),
             ("Library", ft.Icons.LIBRARY_MUSIC),
-            ("Edit", ft.Icons.EDIT_AUDIO),
+            ("Edit", ft.Icons.EDIT_NOTE),
             ("Train", ft.Icons.SCIENCE),
             ("Models", ft.Icons.MODEL_TRAINING),
             ("Settings", ft.Icons.SETTINGS),
         ]
 
-        def navigate(event: ft.Event[ft.NavigationRail]) -> None:
-            self.render(event.control.selected_index or 0)
-
-        rail = ft.NavigationRail(
-            selected_index=index,
-            destinations=[ft.NavigationRailDestination(icon=icon, selected_icon=icon, label=label) for label, icon in destinations],
-            leading=ft.Container(ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN), ft.Text("ACE Studio", weight=ft.FontWeight.BOLD)]), padding=18),
-            bgcolor="#101310",
-            indicator_color="#24442D",
-            extended=True,
-            min_extended_width=210,
-            on_change=navigate,
+        nav = []
+        for position, (label, icon) in enumerate(destinations):
+            if position == 5:
+                nav.append(ft.Divider(color=BORDER, height=28))
+            selected = position == index
+            nav.append(
+                ft.Container(
+                    content=ft.Row([ft.Icon(icon, size=21, color=GREEN if selected else MUTED), ft.Text(label, color="#F5F7F5" if selected else MUTED, weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400)], spacing=16),
+                    bgcolor="#232A28" if selected else None,
+                    border=ft.Border(left=ft.BorderSide(3, GREEN if selected else "transparent")),
+                    border_radius=8,
+                    padding=ft.Padding.symmetric(horizontal=18, vertical=14),
+                    on_click=lambda _event, destination=position: self.show_shell(destination),
+                )
+            )
+        rail = ft.Container(
+            width=205,
+            bgcolor="#0E1211",
+            border=ft.Border(right=ft.BorderSide(1, BORDER)),
+            padding=ft.Padding.only(left=12, right=12, top=26),
+            content=ft.Column(
+                [
+                    ft.Container(ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=32), ft.Text("ACE\nSTUDIO", size=15, weight=ft.FontWeight.BOLD)], spacing=14), padding=ft.Padding.only(left=12, bottom=30)),
+                    *nav,
+                    ft.Container(expand=True),
+                    ft.Row([ft.Icon(ft.Icons.LOCK, size=14, color=GREEN), ft.Text("Runs locally", size=11, color=MUTED)], spacing=8),
+                    ft.Container(height=16),
+                ],
+                spacing=5,
+            ),
         )
+
+        async def resume(_event: ft.Event) -> None:
+            if self.audio:
+                await self.audio.resume()
+
+        async def pause(_event: ft.Event) -> None:
+            if self.audio:
+                await self.audio.pause()
+
+        bars = [8, 14, 22, 11, 18, 28, 16, 24, 10, 19, 31, 17, 25, 13, 20, 27, 12, 23, 15, 29, 18, 9, 21, 14, 26, 11, 19, 8]
         player = ft.Container(
-            height=76,
-            bgcolor="#111411",
-            border=ft.Border(top=ft.BorderSide(1, "#252A26")),
-            padding=ft.Padding.symmetric(horizontal=24),
+            height=104,
+            bgcolor="#101413",
+            border=ft.Border(top=ft.BorderSide(1, BORDER)),
+            padding=ft.Padding.symmetric(horizontal=22),
             content=ft.Row(
                 [
-                    ft.Icon(ft.Icons.ALBUM, color=GREEN, size=34),
-                    ft.Column([self.now_title, ft.Text("ACE Studio library", size=11, color=MUTED)], spacing=2, alignment=ft.MainAxisAlignment.CENTER, width=220),
-                    ft.IconButton(ft.Icons.PLAY_ARROW, tooltip="Play", on_click=lambda _e: self.audio.resume()),
-                    ft.IconButton(ft.Icons.PAUSE, tooltip="Pause", on_click=lambda _e: self.audio.pause()),
-                    ft.Container(expand=True),
+                    ft.Container(width=66, height=66, border_radius=8, gradient=ft.LinearGradient(colors=["#523BC6", "#E05480", "#F2A75F"]), content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white", size=28), alignment=ft.Alignment.CENTER),
+                    ft.Column([self.now_title, self.now_meta], spacing=4, alignment=ft.MainAxisAlignment.CENTER, width=245),
+                    ft.Column(
+                        [
+                            ft.Row([ft.IconButton(ft.Icons.SKIP_PREVIOUS, tooltip="Previous"), ft.IconButton(ft.Icons.PLAY_ARROW, icon_color="#08110B", bgcolor=GREEN, tooltip="Play", on_click=resume), ft.IconButton(ft.Icons.PAUSE, tooltip="Pause", on_click=pause), ft.IconButton(ft.Icons.SKIP_NEXT, tooltip="Next")], alignment=ft.MainAxisAlignment.CENTER),
+                            ft.Row([ft.Text("0:00", size=11, color=MUTED), ft.Row([ft.Container(width=3, height=height, bgcolor=GREEN if n < 16 else "#46504C", border_radius=2) for n, height in enumerate(bars)], spacing=2, alignment=ft.MainAxisAlignment.CENTER, expand=True), ft.Text("—:—", size=11, color=MUTED)], spacing=12),
+                        ],
+                        spacing=2,
+                        expand=True,
+                    ),
+                    ft.IconButton(ft.Icons.DOWNLOAD, tooltip="Save a copy", icon_color=GREEN),
                     self.status,
                 ]
             ),
@@ -171,26 +210,195 @@ class AceStudio:
 
     def render(self, index: int) -> None:
         builders = [self.create_view, self.library_view, self.edit_view, self.train_view, self.models_view, self.settings_view]
-        self.content.content = builders[index]()
-        self.content.padding = 28
+        if index not in self.views:
+            self.views[index] = builders[index]()
+        self.content.content = self.views[index]
+        self.content.padding = 0 if index == 0 else 28
+        self.content.bgcolor = INK
         self.page.update()
 
     def heading(self, title: str, subtitle: str) -> ft.Column:
         return ft.Column([ft.Text(title, size=32, weight=ft.FontWeight.BOLD), ft.Text(subtitle, color=MUTED)], spacing=4)
 
     def create_view(self) -> ft.Control:
-        prompt = ft.TextField(label="Describe the music", hint_text="Dreamy synth-pop, warm bass, intimate vocals…", multiline=True, min_lines=3)
-        lyrics = ft.TextField(label="Lyrics", hint_text="[Verse]\nWrite lyrics or leave blank for instrumental music", multiline=True, min_lines=8)
-        duration = ft.Slider(min=10, max=600, value=120, divisions=59, label="{value}s", active_color=GREEN)
-        bpm = ft.TextField(label="BPM", value="", width=130, keyboard_type=ft.KeyboardType.NUMBER)
-        key = ft.Dropdown(label="Key", value="", options=[ft.DropdownOption(key="", text="Auto")] + [ft.DropdownOption(key=x, text=x) for x in ["C major", "A minor", "D major", "E minor", "F major", "G minor"]], width=160)
-        signature = ft.Dropdown(label="Time", value="", options=[ft.DropdownOption(key="", text="Auto"), ft.DropdownOption(key="4/4", text="4/4"), ft.DropdownOption(key="3/4", text="3/4"), ft.DropdownOption(key="6/8", text="6/8")], width=130)
-        instrumental = ft.Switch(label="Instrumental", value=False, active_color=GREEN)
-        thinking = ft.Switch(label="Use language model / thinking", value=True, active_color=GREEN)
-        batch = ft.Dropdown(label="Versions", value="2", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130)
-        seed = ft.TextField(label="Seed (blank = random)", width=190, keyboard_type=ft.KeyboardType.NUMBER)
-        guidance = ft.TextField(label="Guidance scale", value="15", width=160, keyboard_type=ft.KeyboardType.NUMBER)
-        generate = ft.Button("Generate", icon=ft.Icons.AUTO_AWESOME, bgcolor=GREEN, color="#07140B")
+        field_style = {
+            "filled": True,
+            "fill_color": "#111514",
+            "border_color": BORDER,
+            "focused_border_color": GREEN,
+            "border_radius": 8,
+        }
+        prompt = ft.TextField(
+            value="",
+            hint_text="A nostalgic synthwave track with driving drums, warm pads, and a hopeful mood.",
+            multiline=True,
+            min_lines=2,
+            max_length=1000,
+            **field_style,
+        )
+        lyrics = ft.TextField(
+            value="",
+            hint_text="[Verse]\nCity lights fade into the night…\n\n[Chorus]\nWe rise above the afterglow…",
+            multiline=True,
+            min_lines=6,
+            max_length=4000,
+            **field_style,
+        )
+        duration_value = ft.Text("2:00", weight=ft.FontWeight.W_600)
+        duration = ft.Slider(min=30, max=600, value=120, divisions=57, active_color=GREEN, inactive_color="#37413D")
+        bpm_value = ft.Text("120", weight=ft.FontWeight.W_600)
+        bpm = ft.Slider(min=40, max=200, value=120, divisions=160, active_color=GREEN, inactive_color="#37413D")
+        key = ft.Dropdown(
+            value="A minor",
+            options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"]],
+            dense=True,
+            **field_style,
+        )
+        signature = ft.Dropdown(
+            value="4/4",
+            options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "4/4", "3/4", "6/8"]],
+            dense=True,
+            **field_style,
+        )
+        instrumental = ft.Switch(value=False, active_color=GREEN)
+        thinking = ft.Switch(label="Use language model reasoning", value=True, active_color=GREEN)
+        batch = ft.Dropdown(label="Versions", value="2", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130, **field_style)
+        seed = ft.TextField(label="Seed", hint_text="Random", width=150, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
+        guidance = ft.TextField(label="Guidance", value="15", width=130, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
+        generate = ft.Button("Generate", icon=ft.Icons.GRAPHIC_EQ, bgcolor=GREEN, color="#07140B")
+        improve_music = ft.Button("Improve music", icon=ft.Icons.AUTO_FIX_HIGH, color=GREEN)
+        improve_lyrics = ft.Button("Improve lyrics", icon=ft.Icons.AUTO_FIX_HIGH, color=GREEN)
+        develop = ft.Button("Develop idea", icon=ft.Icons.PSYCHOLOGY, color=GREEN)
+        randomize = ft.Button("Randomize", icon=ft.Icons.SHUFFLE, color=MUTED)
+        generation_progress = ft.ProgressBar(value=0, color=GREEN, bgcolor="#34403B")
+        generation_stage = ft.Text("Preparing ACE-Step", size=16, weight=ft.FontWeight.W_600)
+        generation_percent = ft.Text("0%", color=GREEN, weight=ft.FontWeight.BOLD)
+        generation_detail = ft.Text("Loading local models…", color=MUTED, size=12)
+        generation_eta = ft.Text("Estimating finish time…", color=MUTED, size=12)
+        generation_actions = ft.Row(visible=False, wrap=True)
+        generation_feedback = ft.Container(
+            visible=False,
+            bgcolor="#14251B",
+            border=ft.Border.all(1, "#2D6A43"),
+            border_radius=10,
+            padding=16,
+            content=ft.Column([
+                ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN), generation_stage, ft.Container(expand=True), generation_percent]),
+                generation_progress,
+                ft.Row([generation_detail, ft.Container(expand=True), generation_eta]),
+                generation_actions,
+            ], spacing=9),
+        )
+
+        def format_duration(seconds: float) -> str:
+            total = int(seconds)
+            return f"{total // 60}:{total % 60:02d}"
+
+        def sync_duration(event: ft.Event) -> None:
+            duration_value.value = format_duration(event.control.value)
+            self.page.update()
+
+        def sync_bpm(event: ft.Event) -> None:
+            bpm_value.value = str(int(event.control.value))
+            self.page.update()
+
+        duration.on_change = sync_duration
+        bpm.on_change = sync_bpm
+
+        def apply_metadata(result: dict) -> None:
+            if result.get("duration"):
+                duration.value = max(30, min(600, float(result["duration"])))
+                duration_value.value = format_duration(duration.value)
+            if result.get("bpm"):
+                bpm.value = max(40, min(200, int(result["bpm"])))
+                bpm_value.value = str(int(bpm.value))
+            result_key = result.get("key_scale") or result.get("keyscale")
+            if result_key and result_key in [option.key for option in key.options]:
+                key.value = result_key
+            result_signature = result.get("time_signature") or result.get("timesignature")
+            if result_signature and result_signature in [option.key for option in signature.options]:
+                signature.value = result_signature
+
+        async def improve(kind: str, button: ft.Button) -> None:
+            if kind == "music" and not prompt.value.strip():
+                self.notice("Describe the music you want to improve first.", True)
+                return
+            if kind == "lyrics" and not lyrics.value.strip():
+                self.notice("Add a lyric idea or draft first.", True)
+                return
+            original = button.content
+            button.disabled = True
+            button.content = "ACE is writing…"
+            self.status.value = "5Hz LM is improving your idea"
+            self.page.update()
+            try:
+                client = await asyncio.to_thread(self._ensure_client)
+                result = await asyncio.to_thread(
+                    client.improve_inputs,
+                    prompt.value.strip(),
+                    lyrics.value.strip(),
+                    duration=duration.value,
+                    bpm=int(bpm.value),
+                    key_scale="" if key.value == "Auto" else key.value,
+                    time_signature="" if signature.value == "Auto" else signature.value,
+                )
+                if kind == "music":
+                    prompt.value = result.get("caption") or prompt.value
+                    apply_metadata(result)
+                else:
+                    lyrics.value = result.get("lyrics") or lyrics.value
+                self.notice(f"{kind.title()} improved with ACE-Step's local language model.")
+            except Exception as exc:
+                self.notice(str(exc), True)
+            finally:
+                button.disabled = False
+                button.content = original
+                self.status.value = "Local · private"
+                self.page.update()
+
+        async def develop_idea(_event: ft.Event) -> None:
+            if not prompt.value.strip():
+                self.notice("Give ACE a short idea to develop.", True)
+                return
+            original = develop.content
+            develop.disabled = True
+            develop.content = "Developing…"
+            self.page.update()
+            try:
+                client = await asyncio.to_thread(self._ensure_client)
+                result = await asyncio.to_thread(client.create_sample, prompt.value.strip(), instrumental.value)
+                prompt.value = result.get("caption") or prompt.value
+                lyrics.value = result.get("lyrics") or lyrics.value
+                apply_metadata(result)
+                self.notice("ACE developed your idea into a complete song brief.")
+            except Exception as exc:
+                self.notice(str(exc), True)
+            finally:
+                develop.disabled = False
+                develop.content = original
+                self.page.update()
+
+        async def random_idea(_event: ft.Event) -> None:
+            try:
+                client = await asyncio.to_thread(self._ensure_client)
+                result = await asyncio.to_thread(client.random_sample)
+                prompt.value = result.get("caption") or result.get("prompt") or ""
+                lyrics.value = result.get("lyrics") or ""
+                apply_metadata(result)
+                self.page.update()
+            except Exception as exc:
+                self.notice(str(exc), True)
+
+        async def improve_music_click(_event: ft.Event) -> None:
+            await improve("music", improve_music)
+
+        async def improve_lyrics_click(_event: ft.Event) -> None:
+            await improve("lyrics", improve_lyrics)
+
+        improve_music.on_click = improve_music_click
+        improve_lyrics.on_click = improve_lyrics_click
+        develop.on_click = develop_idea
+        randomize.on_click = random_idea
 
         async def submit(_event: ft.Event) -> None:
             if not prompt.value.strip() and not lyrics.value.strip():
@@ -199,8 +407,8 @@ class AceStudio:
             try:
                 request = GenerationRequest(
                     prompt=prompt.value.strip(), lyrics=lyrics.value.strip(), duration=float(duration.value),
-                    bpm=int(bpm.value) if bpm.value.strip() else None, key_scale=key.value or "",
-                    time_signature=signature.value or "", instrumental=instrumental.value,
+                    bpm=int(bpm.value), key_scale="" if key.value == "Auto" else key.value,
+                    time_signature="" if signature.value == "Auto" else signature.value, instrumental=instrumental.value,
                     thinking=thinking.value, batch_size=int(batch.value), seed=int(seed.value) if seed.value.strip() else None,
                     advanced={"guidance_scale": guidance.value},
                 )
@@ -210,12 +418,60 @@ class AceStudio:
             generate.disabled = True
             generate.content = "Generating…"
             self.status.value = "ACE-Step is creating"
+            generation_feedback.visible = True
+            generation_feedback.bgcolor = "#14251B"
+            generation_feedback.border = ft.Border.all(1, "#2D6A43")
+            generation_progress.value = None
+            generation_stage.value = "Starting ACE-Step"
+            generation_percent.value = "—"
+            generation_detail.value = "Loading the local model and submitting your song…"
+            generation_eta.value = "First load can take several minutes"
+            generation_actions.controls.clear()
+            generation_actions.visible = False
             self.page.update()
+            loop = asyncio.get_running_loop()
+
+            def update_progress(update: dict) -> None:
+                def paint() -> None:
+                    value = max(0.0, min(1.0, float(update.get("progress", 0))))
+                    stage = str(update.get("stage") or "Generating").replace("_", " ").strip()
+                    generation_progress.value = value
+                    generation_percent.value = f"{round(value * 100)}%"
+                    generation_stage.value = stage[:1].upper() + stage[1:]
+                    generation_detail.value = (update.get("progress_text") or "ACE-Step is synthesizing your track")[-140:]
+                    eta = update.get("eta_seconds")
+                    generation_eta.value = f"About {self._format_eta(eta)} remaining" if eta is not None else "Estimating finish time…"
+                    self.page.update()
+
+                loop.call_soon_threadsafe(paint)
             try:
-                result = await asyncio.to_thread(self._generate, request)
+                result = await asyncio.to_thread(self._generate, request, update_progress)
+                generation_progress.value = 1
+                generation_percent.value = "100%"
+                generation_stage.value = "Your tracks are ready"
+                generation_detail.value = f"Created {len(result.audio_paths)} version(s) and saved them to your library."
+                generation_eta.value = "Finished"
+                generation_actions.controls = [
+                    ft.Button(
+                        f"Play version {number}",
+                        icon=ft.Icons.PLAY_ARROW,
+                        bgcolor=GREEN,
+                        color="#07140B",
+                        on_click=lambda _event, p=path, n=number: self.play_track(p, f"{result.title} · Version {n}"),
+                    )
+                    for number, path in enumerate(result.audio_paths, 1)
+                ]
+                generation_actions.visible = True
+                self.views.pop(1, None)
                 self.notice(f"Created {len(result.audio_paths)} track(s)")
-                self.render(1)
             except Exception as exc:
+                generation_progress.value = 0
+                generation_percent.value = "Failed"
+                generation_stage.value = "Generation stopped"
+                generation_detail.value = str(exc)
+                generation_eta.value = "Try again"
+                generation_feedback.bgcolor = "#2A1518"
+                generation_feedback.border = ft.Border.all(1, "#74313A")
                 self.notice(str(exc), True)
             finally:
                 generate.disabled = False
@@ -225,48 +481,185 @@ class AceStudio:
 
         generate.on_click = submit
         advanced = ft.ExpansionTile(
-            title=ft.Text("Advanced generation"),
-            subtitle=ft.Text("Seed, model thinking, batch, and guidance", color=MUTED),
-            controls=[ft.Container(ft.Row([thinking, batch, seed, guidance], wrap=True), padding=ft.Padding.only(bottom=12))],
-        )
-        return ft.Column(
-            [
-                self.heading("Create", "Turn a musical idea into a full track with ACE-Step 1.5."),
-                ft.Row(
-                    [self.card(prompt, lyrics, expand=True), self.card(ft.Text("Shape", size=20, weight=ft.FontWeight.W_600), ft.Text("Duration", color=MUTED), duration, ft.Row([bpm, key, signature], wrap=True), instrumental, advanced, generate, expand=True)],
-                    expand=True,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
-                ),
-            ], spacing=22, expand=True, scroll=ft.ScrollMode.AUTO,
+            title=ft.Text("Advanced controls", size=14),
+            controls=[ft.Container(ft.Column([thinking, ft.Row([batch, seed, guidance], wrap=True)], spacing=12), padding=ft.Padding.only(bottom=12))],
+            bgcolor=RAISED,
+            collapsed_bgcolor=RAISED,
+            shape=ft.RoundedRectangleBorder(radius=8),
+            collapsed_shape=ft.RoundedRectangleBorder(radius=8),
         )
 
-    def _generate(self, request: GenerationRequest):
-        if not self.client:
-            port, token = self.runtime.start()
-            self.client = AceClient(port, token, timeout=120)
-        task_id = self.client.generate(request)
+        recent = []
+        for item in self.storage.generations(limit=5):
+            recent.append(
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=10, vertical=9),
+                    border=ft.Border(bottom=ft.BorderSide(1, "#222826")),
+                    content=ft.Row([
+                        ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", icon_color="white", on_click=lambda _event, p=item["audio_path"], t=item["title"]: self.play_track(p, t)),
+                        ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["created_at"][:16], color=MUTED, size=11)], spacing=2, expand=True),
+                        ft.Text((item["metadata"].get("key_scale") or "—") + "  ·  " + str(item["metadata"].get("bpm") or "Auto") + " BPM", color=MUTED, size=11),
+                        ft.IconButton(ft.Icons.MORE_HORIZ, tooltip="Track actions"),
+                    ]),
+                )
+            )
+        if not recent:
+            recent = [ft.Container(ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, color=GREEN), ft.Text("Your latest generations will appear here.", color=MUTED)], spacing=12), padding=18)]
+
+        editor = ft.Column(
+            [
+                ft.Row([
+                    self.heading("Create", "Turn your ideas into music with ACE-Step 1.5 running locally."),
+                    ft.Container(expand=True),
+                    ft.SegmentedButton(selected=["simple"], segments=[ft.Segment(value="simple", label=ft.Text("Simple")), ft.Segment(value="custom", label=ft.Text("Custom"))]),
+                ]),
+                generation_feedback,
+                ft.Container(
+                    border=ft.Border.all(1, BORDER), border_radius=10, padding=14,
+                    content=ft.Column([
+                        ft.Row([ft.Text("Describe your song", weight=ft.FontWeight.W_600), ft.Container(expand=True), improve_music, develop]),
+                        prompt,
+                        ft.Row([ft.Text("Lyrics", weight=ft.FontWeight.W_600), ft.Container(expand=True), improve_lyrics]),
+                        lyrics,
+                        ft.Row([
+                            ft.Button("Clear", icon=ft.Icons.DELETE_OUTLINE, color=MUTED, on_click=lambda _event: self._clear_fields(prompt, lyrics)),
+                            randomize,
+                            ft.Container(expand=True),
+                            generate,
+                        ]),
+                    ], spacing=10, horizontal_alignment=ft.CrossAxisAlignment.STRETCH),
+                ),
+                ft.Row([ft.Container(expand=True, height=1, bgcolor=BORDER), ft.Icon(ft.Icons.GRAPHIC_EQ, color="#59635F", size=22), ft.Container(expand=True, height=1, bgcolor=BORDER)]),
+                ft.Text("Recent creations", size=15, weight=ft.FontWeight.W_600),
+                ft.Column(recent, spacing=0),
+            ],
+            spacing=14,
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+        )
+
+        inspector = ft.Container(
+            width=326,
+            bgcolor="#0F1413",
+            border=ft.Border(left=ft.BorderSide(1, BORDER)),
+            padding=22,
+            content=ft.Column([
+                ft.Row([ft.Icon(ft.Icons.TUNE, color=GREEN), ft.Text("Generation inspector", size=17, weight=ft.FontWeight.W_600)]),
+                ft.Divider(color=BORDER),
+                ft.Row([ft.Icon(ft.Icons.SCHEDULE, color=MUTED), ft.Text("Duration", expand=True), duration_value]),
+                duration,
+                ft.Row([ft.Text("0:30", size=11, color=MUTED), ft.Container(expand=True), ft.Text("10:00", size=11, color=MUTED)]),
+                ft.Container(height=6),
+                ft.Row([ft.Icon(ft.Icons.SPEED, color=MUTED), ft.Text("BPM", expand=True), bpm_value]),
+                bpm,
+                ft.Row([ft.Text("40", size=11, color=MUTED), ft.Container(expand=True), ft.Text("200", size=11, color=MUTED)]),
+                ft.Container(height=8),
+                ft.Row([ft.Icon(ft.Icons.MUSIC_NOTE, color=MUTED), ft.Text("Key", expand=True), ft.Container(key, width=150)]),
+                ft.Row([ft.Icon(ft.Icons.MORE_TIME, color=MUTED), ft.Text("Time signature", expand=True), ft.Container(signature, width=150)]),
+                ft.Row([ft.Icon(ft.Icons.MIC_OFF, color=MUTED), ft.Text("Instrumental", expand=True), instrumental]),
+                ft.Container(height=6),
+                advanced,
+                ft.Container(expand=True),
+                ft.Row([ft.Icon(ft.Icons.LOCK, color=GREEN, size=14), ft.Text("All AI processing stays on this device", size=11, color=MUTED, expand=True)]),
+            ], spacing=12),
+        )
+        return ft.Row(
+            [ft.Container(editor, expand=True, padding=ft.Padding.only(left=30, right=24, top=22, bottom=18)), inspector],
+            spacing=0,
+            expand=True,
+        )
+
+    def _clear_fields(self, prompt: ft.TextField, lyrics: ft.TextField) -> None:
+        prompt.value = ""
+        lyrics.value = ""
+        self.page.update()
+
+    @staticmethod
+    def _format_eta(seconds: float) -> str:
+        remaining = max(0, round(seconds))
+        if remaining < 60:
+            return f"{remaining} sec"
+        minutes, seconds = divmod(remaining, 60)
+        return f"{minutes} min {seconds:02d} sec"
+
+    def _ensure_client(self) -> AceClient:
+        if self.client:
+            return self.client
+        port, token = self.runtime.start()
+        client = AceClient(port, token, timeout=900)
+        last_error: Exception | None = None
+        for _attempt in range(60):
+            try:
+                client.health()
+                self.client = client
+                return client
+            except Exception as exc:
+                last_error = exc
+                time.sleep(0.5)
+        raise RuntimeError(f"ACE-Step did not become ready: {last_error}")
+
+    def _generate(self, request: GenerationRequest, progress_callback=None):
+        client = self._ensure_client()
+        if progress_callback:
+            progress_callback({"progress": 0, "stage": "Submitting", "progress_text": "Adding your song to the local generation queue"})
+        task_id = client.generate(request)
         self.storage.record_job(task_id, "running", request.fields())
-        result = self.client.wait(task_id)
+        started = time.monotonic()
+
+        def progress(update: dict) -> None:
+            value = float(update.get("progress", 0))
+            elapsed = time.monotonic() - started
+            if value >= 0.03:
+                update["eta_seconds"] = max(0, elapsed * (1 - value) / value)
+            if progress_callback:
+                progress_callback(update)
+
+        result = client.wait(task_id, progress_callback=progress)
+        saved_paths = []
         for number, source in enumerate(result.audio_paths, 1):
             path = Path(source)
-            target = self.storage.audio_dir / f"{task_id}-{number}{path.suffix or '.wav'}"
+            target = self.storage.audio_dir / f"{task_id}-{number}{client.audio_suffix(source)}"
             if path.exists():
                 shutil.copy2(path, target)
             else:
-                target = path
+                client.download_audio(source, target)
             self.storage.save_generation(f"{task_id}-{number}", result.title, request.task_type, str(target), request.prompt, request.lyrics, result.metadata)
+            saved_paths.append(str(target))
+        result.audio_paths = saved_paths
         self.storage.record_job(task_id, "complete", request.fields())
         return result
+
+    def play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
+        self.page.run_task(self._play_track, path, title, generation_id)
+
+    async def _play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
+        try:
+            source = Path(path)
+            if not source.is_file():
+                if not generation_id:
+                    raise FileNotFoundError("The saved audio file is missing")
+                client = await asyncio.to_thread(self._ensure_client)
+                source = self.storage.audio_dir / f"{generation_id}{client.audio_suffix(path)}"
+                await asyncio.to_thread(client.download_audio, path, source)
+                self.storage.update_audio_path(generation_id, str(source))
+            if self.audio is None:
+                self.audio = Audio(src=source.read_bytes(), volume=0.85)
+                self.page.services.append(self.audio)
+            else:
+                self.audio.src = source.read_bytes()
+            self.now_title.value = title
+            self.now_meta.value = "Playing · ACE-Step 1.5 · Local generation"
+            self.page.update()
+            await self.audio.play()
+        except Exception as exc:
+            self.notice(f"Could not play this track: {exc}", True)
 
     def library_view(self) -> ft.Control:
         search = ft.TextField(hint_text="Search your tracks", prefix_icon=ft.Icons.SEARCH, height=48)
         rows = ft.Column(spacing=8)
 
         def play(path: str, title: str) -> None:
-            self.audio.src = path
-            self.now_title.value = title
-            self.audio.play()
-            self.page.update()
+            self.play_track(path, title)
 
         def load(_event: ft.Event | None = None) -> None:
             rows.controls.clear()
@@ -275,7 +668,7 @@ class AceStudio:
                     ft.Container(
                         bgcolor=PANEL, border_radius=10, padding=12,
                         content=ft.Row([
-                            ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", on_click=lambda _e, p=item["audio_path"], t=item["title"]: play(p, t)),
+                            ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", on_click=lambda _e, p=item["audio_path"], t=item["title"], i=item["id"]: self.play_track(p, t, i)),
                             ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["prompt"][:100] or item["task_type"], color=MUTED, size=12)], expand=True),
                             ft.Text(item["created_at"][:16], color=MUTED),
                             ft.IconButton(ft.Icons.FAVORITE if item["favorite"] else ft.Icons.FAVORITE_BORDER, tooltip="Favorite", on_click=lambda _e, i=item["id"]: (self.storage.toggle_favorite(i), load())),
@@ -307,7 +700,7 @@ class AceStudio:
             self.card(
                 ft.Row([source, ft.Button("Choose audio", icon=ft.Icons.UPLOAD_FILE, on_click=choose)]),
                 ft.Container(height=150, border_radius=12, gradient=ft.LinearGradient(colors=["#183524", "#25613B", "#183524"]), content=ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=80)], alignment=ft.MainAxisAlignment.CENTER)),
-                ft.SegmentedButton(selected={"repaint"}, segments=[ft.Segment(value=x, label=ft.Text(x.title())) for x in ["repaint", "extend", "cover", "extract", "lego", "complete"]]),
+                ft.Dropdown(label="Edit type", value="repaint", options=[ft.DropdownOption(key=x, text=x.title()) for x in ["repaint", "extend", "cover", "extract", "lego", "complete"]]),
                 ft.TextField(label="Edit instruction", hint_text="Replace the bridge with a sparse piano breakdown", multiline=True, min_lines=3),
                 ft.Row([ft.TextField(label="Start (seconds)", value="30"), ft.TextField(label="End (seconds)", value="60"), ft.Button("Run edit", icon=ft.Icons.AUTO_FIX_HIGH, bgcolor=GREEN, color="#07140B")]),
             ),
