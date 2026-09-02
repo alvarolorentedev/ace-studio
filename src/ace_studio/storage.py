@@ -125,6 +125,26 @@ class Storage:
             connection.execute("UPDATE generations SET audio_path = ? WHERE id = ?", (audio_path, generation_id))
             connection.commit()
 
+    def update_title(self, generation_id: str, title: str) -> None:
+        with closing(self.connect()) as connection:
+            connection.execute("UPDATE generations SET title = ? WHERE id = ?", (title, generation_id))
+            connection.commit()
+
+    def delete_generation(self, generation_id: str) -> bool:
+        with closing(self.connect()) as connection:
+            row = connection.execute("SELECT audio_path FROM generations WHERE id = ?", (generation_id,)).fetchone()
+            if not row:
+                return False
+            connection.execute("DELETE FROM generations WHERE id = ?", (generation_id,))
+            connection.commit()
+        path = Path(row["audio_path"])
+        try:
+            path.resolve().relative_to(self.audio_dir.resolve())
+        except ValueError:
+            return True
+        path.unlink(missing_ok=True)
+        return True
+
     def record_job(self, job_id: str, state: str, request: dict[str, Any], error: str | None = None) -> None:
         with closing(self.connect()) as connection:
             connection.execute(

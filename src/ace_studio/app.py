@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import time
 from pathlib import Path
 
 import flet as ft
-from flet_audio import Audio
+from flet_audio import Audio, AudioState
 
 from .api import AceClient
 from .models import GenerationRequest
@@ -33,7 +34,18 @@ class AceStudio:
         self.status = ft.Text("Local · private", color=MUTED, size=12)
         self.now_title = ft.Text("Nothing playing", weight=ft.FontWeight.W_600)
         self.now_meta = ft.Text("Choose a track from your library", size=11, color=MUTED)
+        self.elapsed = ft.Text("0:00", size=11, color=MUTED)
+        self.total = ft.Text("—:—", size=11, color=MUTED)
+        self.progress = ft.Slider(min=0, max=1, value=0, active_color=GREEN, inactive_color="#46504C", expand=True)
         self.audio: Audio | None = None
+        self.audio_state = AudioState.STOPPED
+        self.audio_loaded = asyncio.Event()
+        self.current_audio_path: str | None = None
+        self.current_audio_title = ""
+        self.repeat_mode = "off"
+        self.seeking = False
+        self.save_picker = ft.FilePicker()
+        self.page.services.append(self.save_picker)
         self._configure()
 
     def _configure(self) -> None:
@@ -174,14 +186,45 @@ class AceStudio:
         )
 
         async def resume(_event: ft.Event) -> None:
-            if self.audio:
-                await self.audio.resume()
+            try:
+                await self._resume_audio()
+            except Exception as exc:
+                self.notice(f"Could not play this track: {exc}", True)
 
         async def pause(_event: ft.Event) -> None:
             if self.audio:
                 await self.audio.pause()
 
-        bars = [8, 14, 22, 11, 18, 28, 16, 24, 10, 19, 31, 17, 25, 13, 20, 27, 12, 23, 15, 29, 18, 9, 21, 14, 26, 11, 19, 8]
+        def set_repeat(mode: str) -> None:
+            self.repeat_mode = mode
+            repeat.icon = {"off": ft.Icons.REPEAT, "one": ft.Icons.REPEAT_ONE_ON, "all": ft.Icons.REPEAT_ON}[mode]
+            for item in repeat.items:
+                item.checked = item.data == mode
+            self.notice({"off": "Looping off", "one": "Repeating this song", "all": "Repeating all generated songs"}[mode])
+            self.page.update()
+
+        def preview_seek(event: ft.Event) -> None:
+            self.seeking = True
+            self.elapsed.value = self._format_time(float(event.control.value))
+            self.page.update()
+
+        async def seek(event: ft.Event) -> None:
+            if self.audio:
+                await self.audio.seek(ft.Duration(seconds=float(event.control.value)))
+            self.seeking = False
+
+        self.progress.on_change = preview_seek
+        self.progress.on_change_end = seek
+        repeat = ft.PopupMenuButton(
+            icon={"off": ft.Icons.REPEAT, "one": ft.Icons.REPEAT_ONE_ON, "all": ft.Icons.REPEAT_ON}[self.repeat_mode],
+            tooltip="Loop options",
+            items=[
+                ft.PopupMenuItem(content="Off", data="off", checked=self.repeat_mode == "off", on_click=lambda _e: set_repeat("off")),
+                ft.PopupMenuItem(content="Repeat song", data="one", checked=self.repeat_mode == "one", on_click=lambda _e: set_repeat("one")),
+                ft.PopupMenuItem(content="Repeat all songs", data="all", checked=self.repeat_mode == "all", on_click=lambda _e: set_repeat("all")),
+            ],
+        )
+
         player = ft.Container(
             height=104,
             bgcolor="#101413",
@@ -193,13 +236,19 @@ class AceStudio:
                     ft.Column([self.now_title, self.now_meta], spacing=4, alignment=ft.MainAxisAlignment.CENTER, width=245),
                     ft.Column(
                         [
-                            ft.Row([ft.IconButton(ft.Icons.SKIP_PREVIOUS, tooltip="Previous"), ft.IconButton(ft.Icons.PLAY_ARROW, icon_color="#08110B", bgcolor=GREEN, tooltip="Play", on_click=resume), ft.IconButton(ft.Icons.PAUSE, tooltip="Pause", on_click=pause), ft.IconButton(ft.Icons.SKIP_NEXT, tooltip="Next")], alignment=ft.MainAxisAlignment.CENTER),
-                            ft.Row([ft.Text("0:00", size=11, color=MUTED), ft.Row([ft.Container(width=3, height=height, bgcolor=GREEN if n < 16 else "#46504C", border_radius=2) for n, height in enumerate(bars)], spacing=2, alignment=ft.MainAxisAlignment.CENTER, expand=True), ft.Text("—:—", size=11, color=MUTED)], spacing=12),
+                            ft.Row([
+                                ft.IconButton(ft.Icons.SKIP_PREVIOUS, tooltip="Previous", on_click=lambda _e: self.page.run_task(self._skip_track, -1)),
+                                ft.IconButton(ft.Icons.PLAY_ARROW, icon_color="#08110B", bgcolor=GREEN, tooltip="Play", on_click=resume),
+                                ft.IconButton(ft.Icons.PAUSE, tooltip="Pause", on_click=pause),
+                                ft.IconButton(ft.Icons.SKIP_NEXT, tooltip="Next", on_click=lambda _e: self.page.run_task(self._skip_track, 1)),
+                                repeat,
+                            ], alignment=ft.MainAxisAlignment.CENTER),
+                            ft.Row([self.elapsed, self.progress, self.total], spacing=12),
                         ],
                         spacing=2,
                         expand=True,
                     ),
-                    ft.IconButton(ft.Icons.DOWNLOAD, tooltip="Save a copy", icon_color=GREEN),
+                    ft.IconButton(ft.Icons.DOWNLOAD, tooltip="Save a copy", icon_color=GREEN, on_click=lambda _event: self.page.run_task(self._download_current_track)),
                     self.status,
                 ]
             ),
@@ -499,7 +548,7 @@ class AceStudio:
                         ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", icon_color="white", on_click=lambda _event, p=item["audio_path"], t=item["title"]: self.play_track(p, t)),
                         ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["created_at"][:16], color=MUTED, size=11)], spacing=2, expand=True),
                         ft.Text((item["metadata"].get("key_scale") or "—") + "  ·  " + str(item["metadata"].get("bpm") or "Auto") + " BPM", color=MUTED, size=11),
-                        ft.IconButton(ft.Icons.MORE_HORIZ, tooltip="Track actions"),
+                        self._track_menu(item, 0),
                     ]),
                 )
             )
@@ -582,6 +631,78 @@ class AceStudio:
         minutes, seconds = divmod(remaining, 60)
         return f"{minutes} min {seconds:02d} sec"
 
+    @staticmethod
+    def _format_time(seconds: float) -> str:
+        minutes, seconds = divmod(max(0, round(seconds)), 60)
+        return f"{minutes}:{seconds:02d}"
+
+    @staticmethod
+    def _prompt_title(prompt: str) -> str:
+        words = re.findall(r"[\w'-]+", prompt, flags=re.UNICODE)[:7]
+        return " ".join(words).title() or "Untitled generation"
+
+    def _track_menu(self, item: dict, view_index: int) -> ft.PopupMenuButton:
+        return ft.PopupMenuButton(
+            icon=ft.Icons.MORE_HORIZ,
+            tooltip="Track actions",
+            items=[
+                ft.PopupMenuItem(content="Play", icon=ft.Icons.PLAY_ARROW, on_click=lambda _e: self.play_track(item["audio_path"], item["title"], item["id"])),
+                ft.PopupMenuItem(content="Download", icon=ft.Icons.DOWNLOAD, on_click=lambda _e: self.page.run_task(self._download_track, item["audio_path"], item["title"])),
+                ft.PopupMenuItem(content="Rename", icon=ft.Icons.EDIT, on_click=lambda _e: self._rename_track(item, view_index)),
+                ft.PopupMenuItem(content="Favorite", icon=ft.Icons.FAVORITE_BORDER, on_click=lambda _e: (self.storage.toggle_favorite(item["id"]), self.views.pop(0, None), self.show_shell(0))),
+            ],
+        )
+
+    def _rename_track(self, item: dict, view_index: int) -> None:
+        name = ft.TextField(label="Song name", value=item["title"], autofocus=True, max_length=100)
+
+        def cancel(_event: ft.Event) -> None:
+            self.page.pop_dialog()
+
+        def save(_event: ft.Event) -> None:
+            title = name.value.strip()
+            if not title:
+                return
+            self.storage.update_title(item["id"], title)
+            if self.current_audio_title == item["title"]:
+                self.current_audio_title = title
+                self.now_title.value = title
+            self.views.pop(0, None)
+            self.views.pop(1, None)
+            self.page.pop_dialog()
+            self.show_shell(view_index)
+            self.notice(f"Renamed to {title}")
+
+        def validate(event: ft.Event) -> None:
+            rename.disabled = not event.control.value.strip()
+            self.page.update()
+
+        rename = ft.Button("Rename", icon=ft.Icons.EDIT, bgcolor=GREEN, color="#07140B", on_click=save)
+        name.on_change = validate
+        name.on_submit = save
+        self.page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Rename song"),
+                content=name,
+                actions=[ft.TextButton("Cancel", on_click=cancel), rename],
+            )
+        )
+
+    async def _download_current_track(self) -> None:
+        if not self.current_audio_path:
+            self.notice("Play a track before downloading it.", True)
+            return
+        await self._download_track(self.current_audio_path, self.current_audio_title)
+
+    async def _download_track(self, path: str, title: str) -> None:
+        source = Path(path)
+        if not source.is_file():
+            self.notice("The saved audio file is missing.", True)
+            return
+        filename = " ".join(re.sub(r"[^\w .-]", "", title, flags=re.UNICODE).split()) or "ACE Studio track"
+        await self.save_picker.save_file(file_name=f"{filename}{source.suffix}", src_bytes=source.read_bytes())
+
     def _ensure_client(self) -> AceClient:
         if self.client:
             return self.client
@@ -615,6 +736,8 @@ class AceStudio:
                 progress_callback(update)
 
         result = client.wait(task_id, progress_callback=progress)
+        if result.title == "Untitled generation":
+            result.title = self._prompt_title(request.prompt)
         saved_paths = []
         for number, source in enumerate(result.audio_paths, 1):
             path = Path(source)
@@ -632,6 +755,54 @@ class AceStudio:
     def play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
         self.page.run_task(self._play_track, path, title, generation_id)
 
+    async def _resume_audio(self) -> None:
+        if not self.audio:
+            return
+        if self.audio_state == AudioState.COMPLETED:
+            await self.audio.play()
+        else:
+            await self.audio.resume()
+
+    def _audio_state_changed(self, event) -> None:
+        self.audio_state = event.state
+        self.now_meta.value = {
+            AudioState.PLAYING: "Playing · ACE-Step 1.5 · Local generation",
+            AudioState.PAUSED: "Paused",
+            AudioState.COMPLETED: "Finished · Press play to replay",
+        }.get(event.state, self.now_meta.value)
+        self.page.update()
+        if event.state == AudioState.COMPLETED:
+            if self.repeat_mode == "one":
+                self.page.run_task(self._resume_audio)
+            elif self.repeat_mode == "all":
+                self.page.run_task(self._skip_track, 1)
+
+    def _audio_loaded(self, _event) -> None:
+        self.audio_loaded.set()
+
+    def _audio_duration_changed(self, event) -> None:
+        seconds = event.duration.in_seconds
+        self.progress.max = max(1, seconds)
+        self.total.value = self._format_time(seconds)
+        self.page.update()
+
+    def _audio_position_changed(self, event) -> None:
+        if not self.seeking:
+            seconds = event.position / 1000
+            self.progress.value = seconds
+            self.elapsed.value = self._format_time(seconds)
+            self.page.update()
+
+    async def _skip_track(self, offset: int) -> None:
+        tracks = self.storage.generations()
+        if not tracks:
+            self.notice("Generate a song first.", True)
+            return
+        current = self.current_audio_path
+        index = next((i for i, track in enumerate(tracks) if str(Path(track["audio_path"]).resolve()) == current), -1 if offset > 0 else 0)
+        track = tracks[(index + offset) % len(tracks)]
+        await self._play_track(track["audio_path"], track["title"], track["id"])
+
     async def _play_track(self, path: str, title: str, generation_id: str | None = None) -> None:
         try:
             source = Path(path)
@@ -642,16 +813,36 @@ class AceStudio:
                 source = self.storage.audio_dir / f"{generation_id}{client.audio_suffix(path)}"
                 await asyncio.to_thread(client.download_audio, path, source)
                 self.storage.update_audio_path(generation_id, str(source))
+            source_path = str(source.resolve())
+            source_changed = self.audio is None or self.audio.src != source_path
             if self.audio is None:
-                self.audio = Audio(src=source.read_bytes(), volume=0.85)
+                self.audio_loaded.clear()
+                self.audio = Audio(
+                    src=source_path,
+                    volume=0.85,
+                    on_loaded=self._audio_loaded,
+                    on_state_change=self._audio_state_changed,
+                    on_duration_change=self._audio_duration_changed,
+                    on_position_change=self._audio_position_changed,
+                )
                 self.page.services.append(self.audio)
-            else:
-                self.audio.src = source.read_bytes()
+            elif source_changed:
+                self.audio_loaded.clear()
+                self.audio.src = source_path
             self.now_title.value = title
-            self.now_meta.value = "Playing · ACE-Step 1.5 · Local generation"
+            self.now_meta.value = "Loading saved MP3…"
+            self.current_audio_path = source_path
+            self.current_audio_title = title
+            self.progress.value = 0
+            self.elapsed.value = "0:00"
+            self.total.value = "—:—"
             self.page.update()
+            if source_changed:
+                await asyncio.wait_for(self.audio_loaded.wait(), timeout=15)
             await self.audio.play()
         except Exception as exc:
+            self.now_meta.value = "Playback failed"
+            self.page.update()
             self.notice(f"Could not play this track: {exc}", True)
 
     def library_view(self) -> ft.Control:
@@ -660,6 +851,26 @@ class AceStudio:
 
         def play(path: str, title: str) -> None:
             self.play_track(path, title)
+
+        def delete(generation_id: str, title: str) -> None:
+            def cancel(_event: ft.Event) -> None:
+                self.page.pop_dialog()
+
+            def confirm(_event: ft.Event) -> None:
+                self.storage.delete_generation(generation_id)
+                self.views.pop(0, None)
+                self.page.pop_dialog()
+                load()
+                self.notice(f"Deleted {title}")
+
+            self.page.show_dialog(
+                ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text(f"Delete {title}?"),
+                    content=ft.Text("This permanently removes the track and its local audio file."),
+                    actions=[ft.TextButton("Cancel", on_click=cancel), ft.Button("Delete", icon=ft.Icons.DELETE_OUTLINE, bgcolor="#8C2431", color="white", on_click=confirm)],
+                )
+            )
 
         def load(_event: ft.Event | None = None) -> None:
             rows.controls.clear()
@@ -671,7 +882,9 @@ class AceStudio:
                             ft.IconButton(ft.Icons.PLAY_ARROW, tooltip=f"Play {item['title']}", on_click=lambda _e, p=item["audio_path"], t=item["title"], i=item["id"]: self.play_track(p, t, i)),
                             ft.Column([ft.Text(item["title"], weight=ft.FontWeight.W_600), ft.Text(item["prompt"][:100] or item["task_type"], color=MUTED, size=12)], expand=True),
                             ft.Text(item["created_at"][:16], color=MUTED),
+                            ft.IconButton(ft.Icons.EDIT, tooltip="Rename track", on_click=lambda _e, track=item: self._rename_track(track, 1)),
                             ft.IconButton(ft.Icons.FAVORITE if item["favorite"] else ft.Icons.FAVORITE_BORDER, tooltip="Favorite", on_click=lambda _e, i=item["id"]: (self.storage.toggle_favorite(i), load())),
+                            ft.IconButton(ft.Icons.DELETE_OUTLINE, tooltip="Delete track", icon_color="#E57373", on_click=lambda _e, i=item["id"], t=item["title"]: delete(i, t)),
                         ]),
                     )
                 )
