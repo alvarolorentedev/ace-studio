@@ -23,6 +23,18 @@ from .storage import Storage
 ProgressCallback = Callable[[str, float | None], None]
 GITHUB_COMMIT_API = "https://api.github.com/repos/ace-step/ACE-Step-1.5/commits/main"
 GITHUB_ARCHIVE = "https://github.com/ace-step/ACE-Step-1.5/archive/{commit}.tar.gz"
+DIT_MODELS = (
+    "acestep-v15-turbo",
+    "acestep-v15-base",
+    "acestep-v15-sft",
+    "acestep-v15-turbo-shift1",
+    "acestep-v15-turbo-shift3",
+    "acestep-v15-turbo-continuous",
+    "acestep-v15-xl-base",
+    "acestep-v15-xl-sft",
+    "acestep-v15-xl-turbo",
+)
+LM_MODELS = ("acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-1.7B", "acestep-5Hz-lm-4B")
 
 
 def _bundled_file(name: str) -> Path | None:
@@ -165,6 +177,58 @@ class RuntimeManager:
             return RuntimeManifest.from_dict(json.loads(self.current_file.read_text()))
         except (OSError, ValueError, KeyError, TypeError):
             return None
+
+    @property
+    def model_settings_file(self) -> Path:
+        return self.storage.runtime_dir / "models.json"
+
+    def selected_models(self) -> tuple[str, str | None]:
+        recommended = recommended_models(self.hardware)
+        try:
+            saved = json.loads(self.model_settings_file.read_text())
+            dit = saved["dit"]
+            lm = saved.get("lm")
+            if dit in DIT_MODELS and self.model_installed(dit) and lm in (*LM_MODELS, None) and (lm is None or self.model_installed(lm)):
+                return dit, lm
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        dit = recommended[0] if self.model_installed(recommended[0]) else next((name for name in DIT_MODELS if self.model_installed(name)), recommended[0])
+        lm = recommended[1] if recommended[1] and self.model_installed(recommended[1]) else next((name for name in LM_MODELS if self.model_installed(name)), None)
+        return dit, lm
+
+    def select_models(self, dit: str, lm: str | None) -> None:
+        if dit not in DIT_MODELS or lm not in (*LM_MODELS, None):
+            raise ValueError("Unsupported ACE-Step model selection")
+        temporary = self.model_settings_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps({"dit": dit, "lm": lm}, indent=2))
+        temporary.replace(self.model_settings_file)
+
+    def model_installed(self, model: str) -> bool:
+        return (self.storage.models_dir / model / "config.json").is_file()
+
+    def download_model(self, model: str, progress: ProgressCallback = lambda _message, _value: None) -> None:
+        if model not in (*DIT_MODELS, *LM_MODELS):
+            raise ValueError("Unsupported ACE-Step model")
+        manifest = self.current_manifest()
+        if not manifest:
+            raise RuntimeError("ACE-Step runtime is not installed")
+        source = self.storage.runtime_dir / "versions" / manifest.commit
+        target = "main" if model in {"acestep-v15-turbo", "acestep-5Hz-lm-1.7B"} else model
+        self._run(
+            [
+                self._python(source),
+                "-c",
+                "import sys; sys.path.insert(0, sys.argv.pop(1)); from acestep.model_downloader import main; raise SystemExit(main())",
+                str(source),
+                "--model",
+                target,
+                "--dir",
+                str(self.storage.models_dir),
+                "--skip-main",
+            ],
+            source,
+            progress,
+        )
 
     def latest_commit(self) -> str:
         request = urllib.request.Request(GITHUB_COMMIT_API, headers={"Accept": "application/vnd.github+json"})
@@ -344,7 +408,8 @@ class RuntimeManager:
                     "PYTHONPATH": os.pathsep.join([str(source), environment.get("PYTHONPATH", "")]),
                 }
             )
-            _model, lm_model = recommended_models(self.hardware)
+            model, lm_model = self.selected_models()
+            environment["ACESTEP_CONFIG_PATH"] = model
             if lm_model:
                 environment["ACESTEP_LM_MODEL_PATH"] = lm_model
             if manifest.profile == RuntimeProfile.MACOS_MLX:

@@ -184,6 +184,28 @@ class CoreTest(unittest.TestCase):
         report = HardwareReport("Darwin", "arm64", "arm", 16, "Apple Silicon", RuntimeProfile.MACOS_MLX, True)
         self.assertEqual(recommended_models(report), ("acestep-v15-turbo", "acestep-5Hz-lm-0.6B"))
 
+    def test_model_selection_is_validated_and_persisted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            for model in ("acestep-v15-sft", "acestep-5Hz-lm-4B"):
+                model_dir = runtime.storage.models_dir / model
+                model_dir.mkdir()
+                (model_dir / "config.json").write_text("{}")
+            runtime.select_models("acestep-v15-sft", "acestep-5Hz-lm-4B")
+            self.assertEqual(runtime.selected_models(), ("acestep-v15-sft", "acestep-5Hz-lm-4B"))
+            with self.assertRaises(ValueError):
+                runtime.select_models("not-a-model", None)
+
+    def test_missing_recommendation_falls_back_to_an_installed_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            for model in ("acestep-v15-turbo", "acestep-5Hz-lm-1.7B"):
+                model_dir = runtime.storage.models_dir / model
+                model_dir.mkdir()
+                (model_dir / "config.json").write_text("{}")
+            with patch("ace_studio.runtime.recommended_models", return_value=("acestep-v15-turbo", "acestep-5Hz-lm-0.6B")):
+                self.assertEqual(runtime.selected_models(), ("acestep-v15-turbo", "acestep-5Hz-lm-1.7B"))
+
     def test_bundled_runtime_helper_is_resolvable(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertTrue(Path(RuntimeManager(Storage(Path(directory)))._uv()).is_file())

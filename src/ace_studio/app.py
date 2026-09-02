@@ -11,7 +11,7 @@ from flet_audio import Audio, AudioState
 
 from .api import AceClient
 from .models import GenerationRequest
-from .runtime import RuntimeManager, recommended_models
+from .runtime import DIT_MODELS, LM_MODELS, RuntimeManager, recommended_models
 from .storage import Storage
 
 
@@ -44,6 +44,8 @@ class AceStudio:
         self.current_audio_title = ""
         self.repeat_mode = "off"
         self.seeking = False
+        self.sidebar_collapsed = False
+        self.current_view = 0
         self.save_picker = ft.FilePicker()
         self.page.services.append(self.save_picker)
         self._configure()
@@ -144,23 +146,23 @@ class AceStudio:
         )
 
     def show_shell(self, index: int) -> None:
+        self.current_view = index
         destinations = [
             ("Create", ft.Icons.GRAPHIC_EQ),
             ("Library", ft.Icons.LIBRARY_MUSIC),
             ("Edit", ft.Icons.EDIT_NOTE),
             ("Train", ft.Icons.SCIENCE),
-            ("Models", ft.Icons.MODEL_TRAINING),
-            ("Settings", ft.Icons.SETTINGS),
         ]
 
         nav = []
         for position, (label, icon) in enumerate(destinations):
-            if position == 5:
-                nav.append(ft.Divider(color=BORDER, height=28))
             selected = position == index
             nav.append(
                 ft.Container(
-                    content=ft.Row([ft.Icon(icon, size=21, color=GREEN if selected else MUTED), ft.Text(label, color="#F5F7F5" if selected else MUTED, weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400)], spacing=16),
+                    content=ft.Row([
+                        ft.Icon(icon, size=21, color=GREEN if selected else MUTED),
+                        ft.Text(label, visible=not self.sidebar_collapsed, color="#F5F7F5" if selected else MUTED, weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400),
+                    ], spacing=16),
                     bgcolor="#232A28" if selected else None,
                     border=ft.Border(left=ft.BorderSide(3, GREEN if selected else "transparent")),
                     border_radius=8,
@@ -168,17 +170,32 @@ class AceStudio:
                     on_click=lambda _event, destination=position: self.show_shell(destination),
                 )
             )
+        bottom_item = lambda label, icon, click: ft.Container(
+            content=ft.Row([ft.Icon(icon, size=19, color=MUTED), ft.Text(label, visible=not self.sidebar_collapsed, color=MUTED)], spacing=16),
+            border_radius=8,
+            padding=ft.Padding.symmetric(horizontal=18, vertical=12),
+            tooltip=label,
+            on_click=click,
+        )
         rail = ft.Container(
-            width=205,
+            width=72 if self.sidebar_collapsed else 205,
             bgcolor="#0E1211",
             border=ft.Border(right=ft.BorderSide(1, BORDER)),
             padding=ft.Padding.only(left=12, right=12, top=26),
             content=ft.Column(
                 [
-                    ft.Container(ft.Row([ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=32), ft.Text("ACE\nSTUDIO", size=15, weight=ft.FontWeight.BOLD)], spacing=14), padding=ft.Padding.only(left=12, bottom=30)),
+                    ft.IconButton(ft.Icons.GRAPHIC_EQ, icon_color=GREEN, tooltip="Expand sidebar", on_click=self._toggle_sidebar)
+                    if self.sidebar_collapsed else
+                    ft.Row([
+                        ft.Icon(ft.Icons.GRAPHIC_EQ, color=GREEN, size=30),
+                        ft.Text("ACE\nSTUDIO", size=15, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.IconButton(ft.Icons.CHEVRON_LEFT, tooltip="Collapse sidebar", on_click=self._toggle_sidebar),
+                    ]),
+                    ft.Container(height=18),
                     *nav,
                     ft.Container(expand=True),
-                    ft.Row([ft.Icon(ft.Icons.LOCK, size=14, color=GREEN), ft.Text("Runs locally", size=11, color=MUTED)], spacing=8),
+                    bottom_item("Settings", ft.Icons.SETTINGS, lambda _e: self.page.show_dialog(self.settings_dialog())),
+                    ft.Row([ft.Icon(ft.Icons.LOCK, size=14, color=GREEN), ft.Text("Runs locally", visible=not self.sidebar_collapsed, size=11, color=MUTED)], spacing=8),
                     ft.Container(height=16),
                 ],
                 spacing=5,
@@ -195,12 +212,17 @@ class AceStudio:
             if self.audio:
                 await self.audio.pause()
 
-        def set_repeat(mode: str) -> None:
-            self.repeat_mode = mode
-            repeat.icon = {"off": ft.Icons.REPEAT, "one": ft.Icons.REPEAT_ONE_ON, "all": ft.Icons.REPEAT_ON}[mode]
-            for item in repeat.items:
-                item.checked = item.data == mode
-            self.notice({"off": "Looping off", "one": "Repeating this song", "all": "Repeating all generated songs"}[mode])
+        repeat_icons = {"off": ft.Icons.REPEAT, "all": ft.Icons.REPEAT_ON, "one": ft.Icons.REPEAT_ON}
+        repeat_labels = {"off": "Looping off", "one": "Repeating this song", "all": "Repeating all generated songs"}
+        repeat_one_badge = ft.Badge(label="1", alignment=ft.Alignment.BOTTOM_RIGHT, bgcolor=GREEN, text_color=INK, small_size=10, large_size=14, text_style=ft.TextStyle(size=8))
+
+        def cycle_repeat(_event: ft.Event) -> None:
+            modes = ("off", "all", "one")
+            self.repeat_mode = modes[(modes.index(self.repeat_mode) + 1) % len(modes)]
+            repeat.icon = repeat_icons[self.repeat_mode]
+            repeat.badge = repeat_one_badge if self.repeat_mode == "one" else None
+            repeat.tooltip = repeat_labels[self.repeat_mode]
+            self.notice(repeat_labels[self.repeat_mode])
             self.page.update()
 
         def preview_seek(event: ft.Event) -> None:
@@ -215,14 +237,11 @@ class AceStudio:
 
         self.progress.on_change = preview_seek
         self.progress.on_change_end = seek
-        repeat = ft.PopupMenuButton(
-            icon={"off": ft.Icons.REPEAT, "one": ft.Icons.REPEAT_ONE_ON, "all": ft.Icons.REPEAT_ON}[self.repeat_mode],
-            tooltip="Loop options",
-            items=[
-                ft.PopupMenuItem(content="Off", data="off", checked=self.repeat_mode == "off", on_click=lambda _e: set_repeat("off")),
-                ft.PopupMenuItem(content="Repeat song", data="one", checked=self.repeat_mode == "one", on_click=lambda _e: set_repeat("one")),
-                ft.PopupMenuItem(content="Repeat all songs", data="all", checked=self.repeat_mode == "all", on_click=lambda _e: set_repeat("all")),
-            ],
+        repeat = ft.IconButton(
+            repeat_icons[self.repeat_mode],
+            badge=repeat_one_badge if self.repeat_mode == "one" else None,
+            tooltip=repeat_labels[self.repeat_mode],
+            on_click=cycle_repeat,
         )
 
         player = ft.Container(
@@ -258,13 +277,17 @@ class AceStudio:
         self.render(index)
 
     def render(self, index: int) -> None:
-        builders = [self.create_view, self.library_view, self.edit_view, self.train_view, self.models_view, self.settings_view]
+        builders = [self.create_view, self.library_view, self.edit_view, self.train_view]
         if index not in self.views:
             self.views[index] = builders[index]()
         self.content.content = self.views[index]
         self.content.padding = 0 if index == 0 else 28
         self.content.bgcolor = INK
         self.page.update()
+
+    def _toggle_sidebar(self, _event: ft.Event) -> None:
+        self.sidebar_collapsed = not self.sidebar_collapsed
+        self.show_shell(self.current_view)
 
     def heading(self, title: str, subtitle: str) -> ft.Column:
         return ft.Column([ft.Text(title, size=32, weight=ft.FontWeight.BOLD), ft.Text(subtitle, color=MUTED)], spacing=4)
@@ -461,6 +484,7 @@ class AceStudio:
                     thinking=thinking.value, batch_size=int(batch.value), seed=int(seed.value) if seed.value.strip() else None,
                     advanced={"guidance_scale": guidance.value},
                 )
+                request.model = self.runtime.selected_models()[0]
             except ValueError:
                 self.notice("BPM, seed, and guidance must be valid numbers.", True)
                 return
@@ -929,36 +953,116 @@ class AceStudio:
             self.card(ft.Text("Training log", weight=ft.FontWeight.W_600), ft.Text("Training jobs and checkpoints will appear here.", color=MUTED)),
         ], spacing=22, scroll=ft.ScrollMode.AUTO)
 
-    def models_view(self) -> ft.Control:
+    def settings_dialog(self) -> ft.AlertDialog:
         report = self.runtime.hardware
         manifest = self.runtime.current_manifest()
-        model, lm = recommended_models(report)
+        recommended_dit, recommended_lm = recommended_models(report)
+        selected_dit, selected_lm = self.runtime.selected_models()
+        installed_dit = [name for name in DIT_MODELS if self.runtime.model_installed(name)]
+        installed_lm = [name for name in LM_MODELS if self.runtime.model_installed(name)]
+        dit = ft.Dropdown(
+            label="Generation model",
+            value=selected_dit,
+            options=[ft.DropdownOption(key=name, text=name) for name in (installed_dit or [selected_dit])],
+        )
+        lm = ft.Dropdown(
+            label="Language model",
+            value=selected_lm or "disabled",
+            options=[ft.DropdownOption(key="disabled", text="Disabled")]
+            + [ft.DropdownOption(key=name, text=name) for name in installed_lm],
+        )
+
+        def close(_event: ft.Event) -> None:
+            self.page.pop_dialog()
+
+        def save(_event: ft.Event) -> None:
+            selected = [dit.value, None if lm.value == "disabled" else lm.value]
+            missing = [name for name in selected if name and not self.runtime.model_installed(name)]
+            if missing:
+                self.notice(f"Download {missing[0]} before selecting it.", True)
+                return
+            self.runtime.select_models(*selected)
+            self.runtime.stop()
+            self.client = None
+            self.page.pop_dialog()
+            self.notice("Model selection saved. It will load on the next request.")
 
         async def update(_event: ft.Event) -> None:
             self.notice("Checking and staging the latest ACE-Step runtime…")
             try:
                 await asyncio.to_thread(self.runtime.install_latest)
                 self.notice("ACE-Step is up to date. Compatibility probe passed.")
-                self.render(4)
             except Exception as exc:
                 self.notice(str(exc), True)
 
-        return ft.Column([
-            self.heading("Models & runtime", "Hardware-aware local inference and upstream updates."),
+        async def download(name: str, button: ft.Button, detail: ft.Text) -> None:
+            button.disabled = True
+            button.content = "Downloading…"
+            self.page.update()
+            loop = asyncio.get_running_loop()
+
+            def progress(message: str, _value: float | None) -> None:
+                loop.call_soon_threadsafe(lambda: (setattr(detail, "value", message[-100:]), self.page.update()))
+
+            try:
+                await asyncio.to_thread(self.runtime.download_model, name, progress)
+                button.content = "Installed"
+                button.icon = ft.Icons.CHECK
+                detail.value = "Installed locally"
+                dropdown = dit if name in DIT_MODELS else lm
+                if name not in [option.key for option in dropdown.options]:
+                    dropdown.options.append(ft.DropdownOption(key=name, text=name))
+            except Exception as exc:
+                button.disabled = False
+                button.content = "Retry"
+                detail.value = str(exc)[-100:]
+            self.page.update()
+
+        model_rows = []
+        descriptions = {
+            "acestep-v15-base": "50 steps · special tasks and fine-tuning",
+            "acestep-v15-sft": "50 steps · higher detail",
+            "acestep-v15-xl-base": "4B · special tasks · high memory",
+            "acestep-v15-xl-sft": "4B · highest detail · high memory",
+            "acestep-v15-xl-turbo": "4B · fast · 20 GB+ recommended",
+            "acestep-5Hz-lm-4B": "Richest planner · high memory",
+        }
+        for name in (*DIT_MODELS, *LM_MODELS):
+            installed = self.runtime.model_installed(name)
+            detail = ft.Text(descriptions.get(name, "Supported ACE-Step model"), color=MUTED, size=11)
+            button = ft.Button("Installed" if installed else "Download", icon=ft.Icons.CHECK if installed else ft.Icons.DOWNLOAD, disabled=installed)
+            button.on_click = lambda _e, n=name, b=button, d=detail: self.page.run_task(download, n, b, d)
+            model_rows.append(ft.ListTile(title=ft.Text(name), subtitle=detail, trailing=button))
+
+        recommended_missing = any(
+            name and not self.runtime.model_installed(name) for name in (recommended_dit, recommended_lm)
+        )
+
+        content = ft.ListView([
+            self.heading("Settings", "Models, runtime, storage, and privacy."),
+            ft.Text("Models & runtime", size=20, weight=ft.FontWeight.W_600),
             ft.Row([
                 self.card(ft.Icon(ft.Icons.MEMORY, color=GREEN, size=36), ft.Text("Hardware", size=20, weight=ft.FontWeight.W_600), ft.Text(report.summary), ft.Text(report.profile.value, color=MUTED), expand=True),
                 self.card(ft.Icon(ft.Icons.SYSTEM_UPDATE, color=GREEN, size=36), ft.Text("ACE-Step 1.5", size=20, weight=ft.FontWeight.W_600), ft.Text(f"Commit {(manifest.commit[:10] if manifest else 'not installed')}"), ft.Button("Check for update", on_click=update), expand=True),
             ]),
-            self.card(ft.Text("Recommended model set", size=20, weight=ft.FontWeight.W_600), ft.ListTile(leading=ft.Icon(ft.Icons.CHECK_CIRCLE, color=GREEN), title=ft.Text(model), subtitle=ft.Text("Diffusion model")), ft.ListTile(leading=ft.Icon(ft.Icons.CHECK_CIRCLE, color=GREEN), title=ft.Text(lm or "Language model disabled"), subtitle=ft.Text("Selected for available memory"))),
-        ], spacing=22, scroll=ft.ScrollMode.AUTO)
-
-    def settings_view(self) -> ft.Control:
-        return ft.Column([
-            self.heading("Settings", "Local storage and privacy controls."),
+            self.card(
+                ft.Text("Active models", size=20, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    f"Recommended for this hardware: {recommended_dit} + {recommended_lm or 'no language model'}"
+                    + (" · download required" if recommended_missing else ""),
+                    color=GREEN,
+                    size=12,
+                ),
+                dit,
+                lm,
+                ft.Button("Save selection", icon=ft.Icons.SAVE, bgcolor=GREEN, color="#07140B", on_click=save),
+            ),
+            self.card(ft.Text("Available models", size=20, weight=ft.FontWeight.W_600), *model_rows),
             self.card(ft.Text("Storage", size=20, weight=ft.FontWeight.W_600), ft.ListTile(leading=ft.Icon(ft.Icons.FOLDER), title=ft.Text(str(self.storage.root)), subtitle=ft.Text("Runtime, models, library, training data, and logs"))),
             self.card(ft.Text("Privacy", size=20, weight=ft.FontWeight.W_600), ft.Switch(label="Allow anonymous analytics", value=False, disabled=True), ft.Text("ACE Studio has no analytics and binds ACE-Step only to 127.0.0.1 with a per-launch token.", color=MUTED)),
             self.card(ft.Text("About", size=20, weight=ft.FontWeight.W_600), ft.Text("ACE Studio 0.1.0"), ft.Text("ACE-Step is installed from its official upstream repository and keeps its own license files.", color=MUTED)),
-        ], spacing=22, scroll=ft.ScrollMode.AUTO)
+        ], spacing=18, width=780, height=610)
+        return ft.AlertDialog(modal=True, content=content, actions=[ft.TextButton("Close", on_click=close)])
 
 
 async def main(page: ft.Page) -> None:
