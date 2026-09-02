@@ -10,12 +10,17 @@ import urllib.request
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from .models import GenerationRequest, GenerationResult
 
 
 class AceApiError(RuntimeError):
+    pass
+
+
+class GenerationCancelled(AceApiError):
     pass
 
 
@@ -79,21 +84,39 @@ class AceClient:
             }.items()
             if value not in (None, "")
         }
-        return self.call(
+        return self._with_param_obj(self.call(
             "POST",
             "/format_input",
             {"prompt": prompt, "lyrics": lyrics, "temperature": 0.85, "param_obj": parameters},
-        )
+        ))
 
     def create_sample(self, query: str, instrumental: bool = False) -> dict[str, Any]:
-        return self.call(
+        return self._with_param_obj(self.call(
             "POST",
             "/v1/create_sample",
             {"query": query, "instrumental": instrumental, "vocal_language": "unknown", "temperature": 0.85},
-        )
+        ), instrumental=instrumental)
 
     def random_sample(self, simple: bool = True) -> dict[str, Any]:
-        return self.call("POST", "/create_random_sample", {"sample_type": "simple_mode" if simple else "custom_mode"})
+        return self._with_param_obj(self.call("POST", "/create_random_sample", {"sample_type": "simple_mode" if simple else "custom_mode"}))
+
+    @staticmethod
+    def _with_param_obj(result: dict[str, Any], instrumental: bool | None = None) -> dict[str, Any]:
+        """Normalize ACE's constrained-decoding metadata into the UI contract."""
+        aliases = {
+            "duration": ("duration", "audio_duration"),
+            "bpm": ("bpm",),
+            "key_scale": ("key_scale", "keyscale"),
+            "time_signature": ("time_signature", "timesignature"),
+        }
+        parameters = {
+            name: next((result[key] for key in keys if result.get(key) not in (None, "")), None)
+            for name, keys in aliases.items()
+        }
+        parameters = {key: value for key, value in parameters.items() if value is not None}
+        if instrumental is not None:
+            parameters["instrumental"] = instrumental
+        return {**result, "param_obj": parameters}
 
     @staticmethod
     def audio_suffix(source: str) -> str:
@@ -168,10 +191,15 @@ class AceClient:
         poll_interval: float = 1,
         timeout: float = 3600,
         progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_event: Event | None = None,
     ) -> GenerationResult:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            if cancel_event and cancel_event.is_set():
+                raise GenerationCancelled("Generation cancelled")
             update = self.task_status(task_id)
+            if cancel_event and cancel_event.is_set():
+                raise GenerationCancelled("Generation cancelled")
             if progress_callback:
                 progress_callback(update)
             status = update["status"]

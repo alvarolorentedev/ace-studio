@@ -3,23 +3,24 @@ import tempfile
 import unittest
 from io import BytesIO
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from flet_audio import AudioState
 
-from ace_studio.api import AceApiError, AceClient
-from ace_studio.app import AceStudio, description_parameters
+from ace_studio.api import AceApiError, AceClient, GenerationCancelled
+from ace_studio.app import AceStudio
 from ace_studio.models import GenerationRequest, HardwareReport, RuntimeProfile
 from ace_studio.runtime import RuntimeManager, recommended_models
 from ace_studio.storage import Storage
 
 
 class CoreTest(unittest.TestCase):
-    def test_description_parameters_extract_generation_inspector_values(self):
+    def test_ace_metadata_is_normalized_to_generation_parameter_object(self):
         self.assertEqual(
-            description_parameters("Duration: 2:30; tempo: 98; key: D minor; meter: 6/8; instrumental: true"),
-            {"duration": 150.0, "bpm": 98.0, "key_scale": "D minor", "time_signature": "6/8", "instrumental": True},
+            AceClient._with_param_obj({"duration": 150, "bpm": 98, "keyscale": "D minor", "timesignature": "6/8"}, instrumental=True)["param_obj"],
+            {"duration": 150, "bpm": 98, "key_scale": "D minor", "time_signature": "6/8", "instrumental": True},
         )
 
     def test_saved_audio_is_loaded_by_file_path_before_playing(self):
@@ -241,6 +242,12 @@ class CoreTest(unittest.TestCase):
         status = Client(1, "token").task_status("job")
         self.assertEqual(status["progress"], 0.42)
         self.assertEqual(status["stage"], "generating")
+
+    def test_generation_wait_stops_when_cancelled(self):
+        cancel_event = Event()
+        cancel_event.set()
+        with self.assertRaises(GenerationCancelled):
+            AceClient(1, "token").wait("job", cancel_event=cancel_event)
 
     def test_generated_audio_is_downloaded_to_the_persistent_library(self):
         class Response(BytesIO):

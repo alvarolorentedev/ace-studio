@@ -5,11 +5,12 @@ import re
 import shutil
 import time
 from pathlib import Path
+from threading import Event
 
 import flet as ft
 from flet_audio import Audio, AudioState
 
-from .api import AceClient
+from .api import AceClient, GenerationCancelled
 from .models import GenerationRequest
 from .runtime import DIT_MODELS, LM_MODELS, RuntimeManager, recommended_models
 from .storage import Storage
@@ -21,23 +22,6 @@ PANEL = "#121716"
 RAISED = "#19201E"
 BORDER = "#303735"
 MUTED = "#A9B0AD"
-
-
-def description_parameters(description: str) -> dict[str, str | float | bool]:
-    """Extract explicit generation settings included in an ACE description."""
-    parameters: dict[str, str | float | bool] = {}
-    if match := re.search(r"\b(?:duration|length|audio_duration)\s*[:=]\s*(\d+(?::\d{2})?(?:\.\d+)?)\s*(?:seconds?|secs?|s)?\b", description, re.I):
-        minutes, _, seconds = match.group(1).partition(":")
-        parameters["duration"] = float(minutes) * 60 + float(seconds) if seconds else float(minutes)
-    if match := re.search(r"\b(?:bpm|tempo)\s*[:=]\s*(\d{2,3})\b", description, re.I):
-        parameters["bpm"] = float(match.group(1))
-    if match := re.search(r"\b(?:key|key_scale|keyscale)\s*[:=]\s*([A-G](?:#|b)?\s*(?:major|minor))\b", description, re.I):
-        parameters["key_scale"] = match.group(1)
-    if match := re.search(r"\b(?:time[ _-]?signature|timesignature|meter)\s*[:=]\s*(\d+\s*/\s*\d+)\b", description, re.I):
-        parameters["time_signature"] = match.group(1).replace(" ", "")
-    if match := re.search(r"\binstrumental\s*[:=]\s*(true|false)\b", description, re.I):
-        parameters["instrumental"] = match.group(1).lower() == "true"
-    return parameters
 
 
 class AceStudio:
@@ -350,7 +334,7 @@ class AceStudio:
         )
         instrumental = ft.Switch(value=False, active_color=GREEN)
         thinking = ft.Switch(label="Use language model reasoning", value=True, active_color=GREEN)
-        batch = ft.Dropdown(label="Versions", value="2", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130, **field_style)
+        batch = ft.Dropdown(label="Versions", value="1", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130, **field_style)
         seed = ft.TextField(label="Seed", hint_text="Random", width=150, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
         guidance = ft.TextField(label="Guidance", value="15", width=130, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
         generate = ft.Button("Generate", icon=ft.Icons.GRAPHIC_EQ, bgcolor=GREEN, color="#07140B")
@@ -394,9 +378,7 @@ class AceStudio:
         bpm.on_change = sync_bpm
 
         def apply_metadata(result: dict) -> None:
-            parameters = description_parameters(result.get("description") or result.get("caption") or result.get("prompt") or "")
-            parameters.update(result.get("param_obj") or result.get("parameters") or {})
-            parameters.update(result)
+            parameters = result.get("param_obj") or {}
             if parameters.get("duration") or parameters.get("audio_duration"):
                 duration.value = max(30, min(600, float(parameters.get("duration") or parameters["audio_duration"])))
                 duration_value.value = format_duration(duration.value)
@@ -520,8 +502,21 @@ class AceStudio:
             generation_percent.value = "—"
             generation_detail.value = "Loading the model and submitting your song…"
             generation_eta.value = "First load can take several minutes"
-            generation_actions.controls.clear()
-            generation_actions.visible = False
+            cancel_event = Event()
+
+            async def stop_generation(_event: ft.Event) -> None:
+                cancel_event.set()
+                stop.disabled = True
+                stop.content = "Stopping…"
+                generation_stage.value = "Stopping generation"
+                generation_detail.value = "Stopping the local ACE-Step process…"
+                self.page.update()
+                await asyncio.to_thread(self.runtime.stop)
+                self.client = None
+
+            stop = ft.Button("Stop", icon=ft.Icons.STOP, color="#FFFFFF", bgcolor="#8C2431", on_click=stop_generation)
+            generation_actions.controls = [stop]
+            generation_actions.visible = True
             self.page.update()
             loop = asyncio.get_running_loop()
 
@@ -539,7 +534,7 @@ class AceStudio:
 
                 loop.call_soon_threadsafe(paint)
             try:
-                result = await asyncio.to_thread(self._generate, request, update_progress)
+                result = await asyncio.to_thread(self._generate, request, update_progress, cancel_event)
                 generation_progress.value = 1
                 generation_percent.value = "100%"
                 generation_stage.value = "Your tracks are ready"
@@ -559,6 +554,16 @@ class AceStudio:
                 self.views.pop(1, None)
                 self.notice(f"Created {len(result.audio_paths)} track(s)")
             except Exception as exc:
+                if cancel_event.is_set():
+                    generation_progress.value = 0
+                    generation_percent.value = "Stopped"
+                    generation_stage.value = "Generation cancelled"
+                    generation_detail.value = "No track was saved."
+                    generation_eta.value = "Ready when you are"
+                    generation_actions.controls.clear()
+                    generation_actions.visible = False
+                    self.notice("Generation cancelled")
+                    return
                 generation_progress.value = 0
                 generation_percent.value = "Failed"
                 generation_stage.value = "Generation stopped"
@@ -762,7 +767,9 @@ class AceStudio:
                 time.sleep(0.5)
         raise RuntimeError(f"ACE-Step did not become ready: {last_error}")
 
-    def _generate(self, request: GenerationRequest, progress_callback=None):
+    def _generate(self, request: GenerationRequest, progress_callback=None, cancel_event: Event | None = None):
+        if cancel_event and cancel_event.is_set():
+            raise GenerationCancelled("Generation cancelled")
         client = self._ensure_client()
         if progress_callback:
             progress_callback({"progress": 0, "stage": "Submitting", "progress_text": "Adding your song to the generation queue"})
@@ -778,7 +785,13 @@ class AceStudio:
             if progress_callback:
                 progress_callback(update)
 
-        result = client.wait(task_id, progress_callback=progress)
+        try:
+            result = client.wait(task_id, progress_callback=progress, cancel_event=cancel_event)
+        except Exception as exc:
+            if cancel_event and cancel_event.is_set():
+                self.storage.record_job(task_id, "cancelled", request.fields())
+                raise GenerationCancelled("Generation cancelled") from exc
+            raise
         if result.title == "Untitled generation":
             result.title = self._prompt_title(request.prompt)
         saved_paths = []
