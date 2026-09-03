@@ -90,11 +90,16 @@ class AceClient:
             {"prompt": prompt, "lyrics": lyrics, "temperature": 0.85, "param_obj": parameters},
         )
 
-    def create_sample(self, query: str, instrumental: bool = False) -> dict[str, Any]:
+    def create_sample(self, query: str, instrumental: bool = False, vocal_language: str = "en") -> dict[str, Any]:
         return self.call(
             "POST",
             "/v1/create_sample",
-            {"query": query, "instrumental": instrumental, "vocal_language": "unknown", "temperature": 0.85},
+            {
+                "query": query,
+                "instrumental": instrumental,
+                "vocal_language": "unknown" if instrumental else vocal_language,
+                "temperature": 0.85,
+            },
         )
 
     def random_sample(self, simple: bool = True) -> dict[str, Any]:
