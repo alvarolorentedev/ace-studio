@@ -90,7 +90,27 @@ class AceClient:
             {"prompt": prompt, "lyrics": lyrics, "temperature": 0.85, "param_obj": parameters},
         )
 
-    def create_sample(self, query: str, instrumental: bool = False, vocal_language: str = "en") -> dict[str, Any]:
+    def create_sample(
+        self,
+        query: str,
+        instrumental: bool = False,
+        vocal_language: str = "en",
+        *,
+        duration: float | None = None,
+        bpm: int | None = None,
+        key_scale: str = "",
+        time_signature: str = "",
+    ) -> dict[str, Any]:
+        parameters = {
+            key: value
+            for key, value in {
+                "duration": duration,
+                "bpm": bpm,
+                "key_scale": key_scale,
+                "time_signature": time_signature,
+            }.items()
+            if value not in (None, "")
+        }
         return self.call(
             "POST",
             "/v1/create_sample",
@@ -99,6 +119,7 @@ class AceClient:
                 "instrumental": instrumental,
                 "vocal_language": "unknown" if instrumental else vocal_language,
                 "temperature": 0.85,
+                "param_obj": parameters,
             },
         )
 

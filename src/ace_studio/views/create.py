@@ -175,7 +175,16 @@ def build(studio) -> ft.Control:
         studio.page.update()
         try:
             client = await asyncio.to_thread(studio._ensure_client)
-            result = await asyncio.to_thread(client.create_sample, prompt.value.strip(), instrumental.value, language.value)
+            result = await asyncio.to_thread(
+                client.create_sample,
+                prompt.value.strip(),
+                instrumental.value,
+                language.value,
+                duration=float(duration.value),
+                bpm=int(bpm.value),
+                key_scale="" if key.value == "Auto" else key.value,
+                time_signature="" if signature.value == "Auto" else signature.value,
+            )
             prompt.value = result.get("caption") or prompt.value
             lyrics.value = result.get("lyrics") or lyrics.value
             studio.notice("ACE developed your idea into a complete song brief.")
