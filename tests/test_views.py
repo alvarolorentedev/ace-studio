@@ -125,6 +125,28 @@ class Training:
     def preprocess(self, name):
         return "preprocess", Path("/tmp") / name / "tensors"
 
+    def run_pipeline(self, audio_dir, name, _tag, _instrumental, request, progress_callback, _cancel_event):
+        self.last_request = request
+        progress_callback(
+            {
+                "stage": "Dataset saved",
+                "progress": 1,
+                "samples_data": [DatasetSample(0, "song.wav", str(Path(audio_dir) / "song.wav"), duration=12)],
+            }
+        )
+        progress_callback(
+            {
+                "stage": "Training",
+                "status": "Complete",
+                "is_training": False,
+                "current_epoch": 1,
+                "current_loss": 0.2,
+                "logs": ["finished"],
+                "config": {"epochs": 1},
+            }
+        )
+        return Path("/tmp") / name
+
     def task_status(self, kind, task_id):
         return {"status": "completed", "current": 1, "total": 1, "progress": f"{kind}:{task_id}"}
 
@@ -271,21 +293,15 @@ class ViewSmokeTest(unittest.TestCase):
 
             train_root = train.build(studio)
             find(train_root, label="Audio dataset folder").value = directory
-            asyncio.run(find(train_root, content="Scan & save").on_click(None))
-            asyncio.run(find(train_root, tooltip="Edit track metadata").on_click(None))
-            asyncio.run(find(studio.page.dialog, content="Save").on_click(None))
-            asyncio.run(find(train_root, content="Auto-label unlabeled").on_click(None))
-            asyncio.run(find(train_root, content="Preprocess tensors").on_click(None))
-            adapter_kind = find(train_root, label="Adapter")
+            adapter_kind = find(train_root, label="Adapter type")
             adapter_kind.value = "lokr"
             adapter_kind.on_select(SimpleNamespace(control=adapter_kind))
             self.assertTrue(find(train_root, label="LoKr factor (-1 = auto)").visible)
-            asyncio.run(find(train_root, content="Start training").on_click(None))
+            asyncio.run(find(train_root, content="Train adapter").on_click(None))
             self.assertEqual(studio.training.last_request.kind, "lokr")
             self.assertEqual(find(train_root, value="0.2000").value, "0.2000")
             self.assertTrue(any(isinstance(control, cv.Canvas) for control in controls(train_root)))
-            asyncio.run(find(train_root, content="Export adapter").on_click(None))
-            asyncio.run(find(train_root, content="Stop").on_click(None))
+            self.assertFalse(any(getattr(control, "content", None) == "Export adapter" for control in controls(train_root)))
 
     def test_setup_library_and_settings_actions(self):
         with tempfile.TemporaryDirectory() as directory:

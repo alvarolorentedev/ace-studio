@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import flet as ft
 
-from ..theme import GREEN, MUTED, PANEL
+from ..theme import BORDER, DANGER_BUTTON_STYLE, DANGER_TEXT, FIELD_STYLE, GREEN, MUTED, PANEL
 
 
 def build(studio) -> ft.Control:
-    search = ft.TextField(hint_text="Search your tracks", prefix_icon=ft.Icons.SEARCH, height=48)
+    search = ft.TextField(hint_text="Search your tracks", prefix_icon=ft.Icons.SEARCH, height=48, **FIELD_STYLE)
     rows = ft.Column(spacing=8)
 
     def play(path: str, title: str) -> None:
@@ -30,7 +30,7 @@ def build(studio) -> ft.Control:
                 content=ft.Text("This permanently removes the track and its audio file."),
                 actions=[
                     ft.TextButton("Cancel", on_click=cancel),
-                    ft.Button("Delete", icon=ft.Icons.DELETE_OUTLINE, bgcolor="#8C2431", color="white", on_click=confirm),
+                    ft.Button("Delete", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=confirm),
                 ],
             )
         )
@@ -41,6 +41,7 @@ def build(studio) -> ft.Control:
             rows.controls.append(
                 ft.Container(
                     bgcolor=PANEL,
+                    border=ft.Border.all(1, BORDER),
                     border_radius=10,
                     padding=12,
                     content=ft.Row(
@@ -69,7 +70,7 @@ def build(studio) -> ft.Control:
                             ft.IconButton(
                                 ft.Icons.DELETE_OUTLINE,
                                 tooltip="Delete track",
-                                icon_color="#E57373",
+                                icon_color=DANGER_TEXT,
                                 on_click=lambda _e, i=item["id"], t=item["title"]: delete(i, t),
                             ),
                         ]

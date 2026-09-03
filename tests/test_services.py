@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from threading import Event
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -157,6 +158,65 @@ class ServiceTest(unittest.TestCase):
             self.assertEqual(training.task_status("preprocess", "two")["task_id"], "two")
             self.assertEqual(training.status()["status"], "Idle")
             self.assertEqual(training.stop()["message"], "stopped")
+
+    def test_one_click_training_pipeline_registers_without_activation(self):
+        class PipelineClient(FakeClient):
+            def auto_label_status(self, task_id):
+                return {"task_id": task_id, "status": "completed"}
+
+            def preprocess_status(self, task_id):
+                return {"task_id": task_id, "status": "completed"}
+
+            def training_status(self):
+                return {"status": "Complete", "is_training": False, "current_epoch": 10, "config": {"epochs": 10}}
+
+        with tempfile.TemporaryDirectory() as directory:
+            storage = Storage(Path(directory))
+            client = PipelineClient()
+            generation = SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace(selected_models=lambda: ("turbo", "lm")))
+            training = TrainingService(generation, storage)
+            updates = []
+            exported = training.run_pipeline(
+                "/audio",
+                "My Voice",
+                "",
+                True,
+                TrainingRequest("lora", "", str(Path(directory) / "run")),
+                updates.append,
+            )
+            self.assertTrue(exported.exists())
+            self.assertEqual([adapter.name for adapter in storage.adapters()], ["My Voice"])
+            self.assertFalse(storage.adapters()[0].active)
+            self.assertEqual(
+                [update["stage"] for update in updates],
+                [
+                    "Scanning dataset",
+                    "Dataset saved",
+                    "Auto-labeling",
+                    "Auto-labeling",
+                    "Preprocessing",
+                    "Preprocessing",
+                    "Training",
+                    "Training",
+                    "Registering adapter",
+                ],
+            )
+
+    def test_one_click_training_cancellation_does_not_start_or_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            storage = Storage(Path(directory))
+            client = FakeClient()
+            training = TrainingService(
+                SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace(selected_models=lambda: ("turbo", None))), storage
+            )
+            cancelled = Event()
+            cancelled.set()
+            with self.assertRaises(InterruptedError):
+                training.run_pipeline(
+                    "/audio", "My Voice", "", True, TrainingRequest("lora", "", str(Path(directory) / "run")), cancel_event=cancelled
+                )
+            self.assertEqual(client.calls, [])
+            self.assertEqual(storage.adapters(), [])
 
     def test_missing_adapter_is_rejected_and_deactivated(self):
         with tempfile.TemporaryDirectory() as directory:

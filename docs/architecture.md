@@ -17,7 +17,7 @@ GenerationService ───── TrainingService
 
 `app.py` is the composition root and shared shell. Screen-specific controls live in `views/`; playback events live in `playback.py`. Views call concrete services and never embed ACE-Step endpoint paths or parse upstream responses.
 
-The `services/` package keeps the two workflows separate. `GenerationService` owns runtime readiness, model initialization, generation/edit polling, cancellation, downloads, and library persistence. `TrainingService` owns dataset scan/edit/save, optional labeling, preprocessing, LoRA/LoKr execution, export, and adapter activation. Both reuse `AceClient` and `Storage`.
+The `services/` package keeps the two workflows separate. `GenerationService` owns runtime readiness, model initialization, generation/edit polling, cancellation, downloads, and library persistence. `TrainingService` owns dataset scan/edit/save, optional labeling, preprocessing, LoRA/LoKr execution, export, and adapter activation. Its one-click pipeline reports progress to the view and is the only place that sequences those training stages. Both reuse `AceClient` and `Storage`.
 
 `RuntimeManager` installs only `SUPPORTED_COMMIT`. Installation happens in a staging directory, the route compatibility probe runs before activation, and `current.json` changes only after success. The existing runtime therefore survives download, installation, or probe failures.
 

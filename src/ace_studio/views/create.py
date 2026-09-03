@@ -6,24 +6,64 @@ from threading import Event
 import flet as ft
 
 from ..models import GenerationRequest
-from ..theme import BORDER, GREEN, MUTED, RAISED
+from ..theme import (
+    BORDER,
+    DANGER_BUTTON_STYLE,
+    ERROR_BORDER,
+    ERROR_SURFACE,
+    FIELD_STYLE,
+    GREEN,
+    INPUT,
+    MUTED,
+    PRIMARY_BUTTON_STYLE,
+    RAISED,
+    SUCCESS_BORDER,
+    SUCCESS_SURFACE,
+    TEXT,
+)
 
 
 def build(studio) -> ft.Control:
-    field_style = {
-        "filled": True,
-        "fill_color": "#111514",
-        "border_color": BORDER,
-        "focused_border_color": GREEN,
-        "border_radius": 8,
-    }
+    def inspector_picker(label: str, initial: str, options: list[str]) -> tuple[ft.PopupMenuButton, dict[str, str]]:
+        selected = {"value": initial}
+        value = ft.Text(initial, color=TEXT, weight=ft.FontWeight.W_600)
+
+        def choose(choice: str) -> None:
+            selected["value"] = choice
+            value.value = choice
+            studio.page.update()
+
+        return (
+            ft.PopupMenuButton(
+                content=ft.Container(
+                    content=ft.Column(
+                        [
+                            ft.Text(label, size=11, color=MUTED),
+                            ft.Row([value, ft.Container(expand=True), ft.Icon(ft.Icons.ARROW_DROP_DOWN, color=MUTED)]),
+                        ],
+                        spacing=0,
+                    ),
+                    bgcolor=INPUT,
+                    border=ft.Border.all(1, BORDER),
+                    border_radius=8,
+                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
+                ),
+                items=[ft.PopupMenuItem(content=choice, on_click=lambda _event, choice=choice: choose(choice)) for choice in options],
+                padding=0,
+                style=ft.ButtonStyle(overlay_color=ft.Colors.TRANSPARENT, shape=ft.RoundedRectangleBorder(radius=8)),
+                tooltip="",
+                expand=True,
+            ),
+            selected,
+        )
+
     prompt = ft.TextField(
         value="",
         hint_text="A nostalgic synthwave track with driving drums, warm pads, and a hopeful mood.",
         multiline=True,
         min_lines=2,
         max_length=1000,
-        **field_style,
+        **FIELD_STYLE,
     )
     lyrics = ft.TextField(
         value="",
@@ -31,41 +71,27 @@ def build(studio) -> ft.Control:
         multiline=True,
         min_lines=6,
         max_length=4000,
-        **field_style,
+        **FIELD_STYLE,
     )
     duration_value = ft.Text("2:00", weight=ft.FontWeight.W_600)
-    duration = ft.Slider(min=30, max=600, value=120, divisions=57, active_color=GREEN, inactive_color="#37413D")
+    duration = ft.Slider(min=30, max=600, value=120, divisions=57)
     bpm_value = ft.Text("120", weight=ft.FontWeight.W_600)
-    bpm = ft.Slider(min=40, max=200, value=120, divisions=160, active_color=GREEN, inactive_color="#37413D")
-    key = ft.Dropdown(
-        label="Key",
-        value="A minor",
-        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"]],
-        dense=True,
-        expand=True,
-        **field_style,
-    )
-    signature = ft.Dropdown(
-        label="Time signature",
-        value="4/4",
-        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "4/4", "3/4", "6/8"]],
-        dense=True,
-        expand=True,
-        **field_style,
-    )
+    bpm = ft.Slider(min=40, max=200, value=120, divisions=160)
+    key, key_selection = inspector_picker("Key", "A minor", ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"])
+    signature, signature_selection = inspector_picker("Time signature", "4/4", ["Auto", "4/4", "3/4", "6/8"])
     instrumental = ft.Switch(value=False, active_color=GREEN)
     thinking = ft.Switch(label="Use language model reasoning", value=True, active_color=GREEN)
     batch = ft.Dropdown(
-        label="Versions", value="1", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130, **field_style
+        label="Versions", value="1", options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)], width=130, **FIELD_STYLE
     )
-    seed = ft.TextField(label="Seed", hint_text="Random", width=150, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
-    guidance = ft.TextField(label="Guidance", value="15", width=130, keyboard_type=ft.KeyboardType.NUMBER, **field_style)
-    generate = ft.Button("Generate", icon=ft.Icons.GRAPHIC_EQ, bgcolor=GREEN, color="#07140B")
+    seed = ft.TextField(label="Seed", hint_text="Random", width=150, keyboard_type=ft.KeyboardType.NUMBER, **FIELD_STYLE)
+    guidance = ft.TextField(label="Guidance", value="15", width=130, keyboard_type=ft.KeyboardType.NUMBER, **FIELD_STYLE)
+    generate = ft.Button("Generate", icon=ft.Icons.GRAPHIC_EQ, style=PRIMARY_BUTTON_STYLE)
     improve_music = ft.Button("Improve music", icon=ft.Icons.AUTO_FIX_HIGH, color=GREEN)
     improve_lyrics = ft.Button("Improve lyrics", icon=ft.Icons.AUTO_FIX_HIGH, color=GREEN)
     develop = ft.Button("Develop idea", icon=ft.Icons.PSYCHOLOGY, color=GREEN)
     randomize = ft.Button("Randomize", icon=ft.Icons.SHUFFLE, color=MUTED)
-    generation_progress = ft.ProgressBar(value=0, color=GREEN, bgcolor="#34403B")
+    generation_progress = ft.ProgressBar(value=0)
     generation_stage = ft.Text("Preparing ACE-Step", size=16, weight=ft.FontWeight.W_600)
     generation_percent = ft.Text("0%", color=GREEN, weight=ft.FontWeight.BOLD)
     generation_detail = ft.Text("Loading models…", color=MUTED, size=12)
@@ -73,8 +99,8 @@ def build(studio) -> ft.Control:
     generation_actions = ft.Row(visible=False, wrap=True)
     generation_feedback = ft.Container(
         visible=False,
-        bgcolor="#14251B",
-        border=ft.Border.all(1, "#2D6A43"),
+        bgcolor=SUCCESS_SURFACE,
+        border=ft.Border.all(1, SUCCESS_BORDER),
         border_radius=10,
         padding=16,
         content=ft.Column(
@@ -123,8 +149,8 @@ def build(studio) -> ft.Control:
                 lyrics.value.strip(),
                 duration=duration.value,
                 bpm=int(bpm.value),
-                key_scale="" if key.value == "Auto" else key.value,
-                time_signature="" if signature.value == "Auto" else signature.value,
+                key_scale="" if key_selection["value"] == "Auto" else key_selection["value"],
+                time_signature="" if signature_selection["value"] == "Auto" else signature_selection["value"],
             )
             if kind == "music":
                 prompt.value = result.get("caption") or prompt.value
@@ -191,8 +217,8 @@ def build(studio) -> ft.Control:
                 lyrics=lyrics.value.strip(),
                 duration=float(duration.value),
                 bpm=int(bpm.value),
-                key_scale="" if key.value == "Auto" else key.value,
-                time_signature="" if signature.value == "Auto" else signature.value,
+                key_scale="" if key_selection["value"] == "Auto" else key_selection["value"],
+                time_signature="" if signature_selection["value"] == "Auto" else signature_selection["value"],
                 instrumental=instrumental.value,
                 thinking=thinking.value,
                 batch_size=int(batch.value),
@@ -207,8 +233,8 @@ def build(studio) -> ft.Control:
         generate.content = "Generating…"
         studio.status.value = "ACE-Step is creating"
         generation_feedback.visible = True
-        generation_feedback.bgcolor = "#14251B"
-        generation_feedback.border = ft.Border.all(1, "#2D6A43")
+        generation_feedback.bgcolor = SUCCESS_SURFACE
+        generation_feedback.border = ft.Border.all(1, SUCCESS_BORDER)
         generation_progress.value = None
         generation_stage.value = "Starting ACE-Step"
         generation_percent.value = "—"
@@ -227,7 +253,7 @@ def build(studio) -> ft.Control:
             studio.generation.reset_client()
             studio.client = None
 
-        stop = ft.Button("Stop", icon=ft.Icons.STOP, color="#FFFFFF", bgcolor="#8C2431", on_click=stop_generation)
+        stop = ft.Button("Stop", icon=ft.Icons.STOP, style=DANGER_BUTTON_STYLE, on_click=stop_generation)
         generation_actions.controls = [stop]
         generation_actions.visible = True
         studio.page.update()
@@ -258,8 +284,7 @@ def build(studio) -> ft.Control:
                 ft.Button(
                     f"Play version {number}",
                     icon=ft.Icons.PLAY_ARROW,
-                    bgcolor=GREEN,
-                    color="#07140B",
+                    style=PRIMARY_BUTTON_STYLE,
                     on_click=lambda _event, p=path, n=number: studio.play_track(p, f"{result.title} · Version {n}"),
                 )
                 for number, path in enumerate(result.audio_paths, 1)
@@ -283,8 +308,8 @@ def build(studio) -> ft.Control:
             generation_stage.value = "Generation stopped"
             generation_detail.value = str(exc)
             generation_eta.value = "Try again"
-            generation_feedback.bgcolor = "#2A1518"
-            generation_feedback.border = ft.Border.all(1, "#74313A")
+            generation_feedback.bgcolor = ERROR_SURFACE
+            generation_feedback.border = ft.Border.all(1, ERROR_BORDER)
             studio.notice(str(exc), True)
         finally:
             generate.disabled = False
@@ -311,6 +336,7 @@ def build(studio) -> ft.Control:
         width=170,
         options=[ft.DropdownOption(key="none", text="None")] + [ft.DropdownOption(key=item.id, text=item.name) for item in adapters],
         disabled=not adapters,
+        **FIELD_STYLE,
     )
     adapter_scale = ft.Dropdown(
         label="Strength",
@@ -318,6 +344,7 @@ def build(studio) -> ft.Control:
         width=90,
         options=[ft.DropdownOption(key=str(value), text=str(value)) for value in (0.25, 0.5, 0.75, 1.0)],
         disabled=not adapters,
+        **FIELD_STYLE,
     )
 
     async def apply_adapter(_event: ft.Event) -> None:
@@ -380,7 +407,7 @@ def build(studio) -> ft.Control:
 
     inspector = ft.Container(
         width=326,
-        bgcolor="#0F1413",
+        bgcolor=RAISED,
         border=ft.Border(left=ft.BorderSide(1, BORDER)),
         padding=22,
         content=ft.Column(

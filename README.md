@@ -60,7 +60,7 @@ Choose a WAV file or a track from your library, then run cover, repaint, LEGO, e
 
 ### Train
 
-Choose a raw-audio folder, review track metadata, optionally auto-label it with an installed language model, preprocess tensors, and train LoRA or LoKr. Progress and failures are shown in the app; completed checkpoints can be exported, registered, and loaded from Settings with a configurable strength.
+Choose a raw-audio folder, then select **Train adapter**. ACE Studio scans and saves the dataset, auto-labels unlabeled tracks when a language model is selected, preprocesses tensors, trains a LoRA adapter, and registers it for Settings. LoKr and manual hyperparameters remain available in **Advanced settings**; progress, failures, and metadata review stay on the same screen.
 
 ![ACE Studio's Train workspace](docs/screenshots/train.jpg)
 

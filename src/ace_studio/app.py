@@ -13,7 +13,23 @@ from .models import GenerationRequest
 from .runtime import RuntimeManager
 from .services import GenerationService, TrainingService
 from .storage import Storage
-from .theme import BORDER, GREEN, INK, MUTED, PANEL
+from .theme import (
+    ARTWORK_GRADIENT,
+    BORDER,
+    CARD_RADIUS,
+    DANGER,
+    GREEN,
+    INK,
+    MUTED,
+    PANEL,
+    PLAYER,
+    PRIMARY_BUTTON_STYLE,
+    SELECTED,
+    SHELL,
+    SUCCESS,
+    TEXT,
+    app_theme,
+)
 
 
 class AceStudio:
@@ -31,7 +47,7 @@ class AceStudio:
         self.now_meta = ft.Text("Choose a track from your library", size=11, color=MUTED)
         self.elapsed = ft.Text("0:00", size=11, color=MUTED)
         self.total = ft.Text("—:—", size=11, color=MUTED)
-        self.progress = ft.Slider(min=0, max=1, value=0, active_color=GREEN, inactive_color="#46504C", expand=True)
+        self.progress = ft.Slider(min=0, max=1, value=0, expand=True)
         self.audio: Audio | None = None
         self.audio_state = AudioState.STOPPED
         self.audio_loaded = asyncio.Event()
@@ -50,7 +66,8 @@ class AceStudio:
         self.page.bgcolor = INK
         self.page.padding = 0
         self.page.theme_mode = ft.ThemeMode.DARK
-        self.page.theme = ft.Theme(color_scheme_seed=GREEN, font_family="Inter")
+        self.page.theme = app_theme()
+        self.page.dark_theme = app_theme()
         # A setup card needs more vertical room than Flet's compact default.
         self.page.window.width = 1120
         self.page.window.height = 820
@@ -62,14 +79,14 @@ class AceStudio:
         return ft.Container(
             content=ft.Column(list(controls), spacing=14),
             bgcolor=PANEL,
-            border=ft.Border.all(1, "#242925"),
-            border_radius=16,
+            border=ft.Border.all(1, BORDER),
+            border_radius=CARD_RADIUS,
             padding=padding,
             expand=expand,
         )
 
     def notice(self, message: str, error: bool = False) -> None:
-        self.page.show_dialog(ft.SnackBar(ft.Text(message), bgcolor="#8C2431" if error else "#225A35"))
+        self.page.show_dialog(ft.SnackBar(ft.Text(message), bgcolor=DANGER if error else SUCCESS))
 
     def show_setup(self) -> None:
         from .views.setup import show
@@ -96,13 +113,13 @@ class AceStudio:
                             ft.Text(
                                 label,
                                 visible=not self.sidebar_collapsed,
-                                color="#F5F7F5" if selected else MUTED,
+                                color=TEXT if selected else MUTED,
                                 weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400,
                             ),
                         ],
                         spacing=16,
                     ),
-                    bgcolor="#232A28" if selected else None,
+                    bgcolor=SELECTED if selected else None,
                     border=ft.Border(left=ft.BorderSide(3, GREEN if selected else "transparent")),
                     border_radius=8,
                     padding=ft.Padding.symmetric(horizontal=18, vertical=14),
@@ -124,7 +141,7 @@ class AceStudio:
 
         rail = ft.Container(
             width=72 if self.sidebar_collapsed else 205,
-            bgcolor="#0E1211",
+            bgcolor=SHELL,
             border=ft.Border(right=ft.BorderSide(1, BORDER)),
             padding=ft.Padding.only(left=12, right=12, top=26),
             content=ft.Column(
@@ -200,7 +217,7 @@ class AceStudio:
 
         player = ft.Container(
             height=88,
-            bgcolor="#101413",
+            bgcolor=PLAYER,
             border=ft.Border(top=ft.BorderSide(1, BORDER)),
             padding=ft.Padding.symmetric(horizontal=18),
             content=ft.Row(
@@ -209,7 +226,7 @@ class AceStudio:
                         width=56,
                         height=56,
                         border_radius=8,
-                        gradient=ft.LinearGradient(colors=["#523BC6", "#E05480", "#F2A75F"]),
+                        gradient=ft.LinearGradient(colors=ARTWORK_GRADIENT),
                         content=ft.Icon(ft.Icons.MUSIC_NOTE, color="white", size=24),
                         alignment=ft.Alignment.CENTER,
                     ),
@@ -250,7 +267,13 @@ class AceStudio:
             ),
         )
         self.page.clean()
-        self.page.add(ft.Column([ft.Row([rail, self.content], spacing=0, expand=True), player], spacing=0, expand=True))
+        self.page.add(
+            ft.Column(
+                [ft.Container(content=ft.Row([rail, self.content], spacing=0, expand=True), expand=True), player],
+                spacing=0,
+                expand=True,
+            )
+        )
         self.render(index)
 
     def render(self, index: int) -> None:
@@ -343,7 +366,7 @@ class AceStudio:
             rename.disabled = not event.control.value.strip()
             self.page.update()
 
-        rename = ft.Button("Rename", icon=ft.Icons.EDIT, bgcolor=GREEN, color="#07140B", on_click=save)
+        rename = ft.Button("Rename", icon=ft.Icons.EDIT, style=PRIMARY_BUTTON_STYLE, on_click=save)
         name.on_change = validate
         name.on_submit = save
         self.page.show_dialog(

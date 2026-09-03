@@ -5,15 +5,15 @@ import asyncio
 import flet as ft
 
 from ..hardware import recommended_models
-from ..theme import GREEN, MUTED
+from ..theme import GREEN, MUTED, PRIMARY_BUTTON_STYLE
 
 
 def show(studio) -> None:
     report = studio.runtime.hardware
     model, lm = recommended_models(report)
-    progress = ft.ProgressBar(value=0, color=GREEN, bgcolor="#29302B")
+    progress = ft.ProgressBar(value=0)
     log = ft.Text("Ready to install", color=MUTED, selectable=True)
-    button = ft.Button("Install ACE-Step", icon=ft.Icons.DOWNLOAD, bgcolor=GREEN, color="#07140B")
+    button = ft.Button("Install ACE-Step", icon=ft.Icons.DOWNLOAD, style=PRIMARY_BUTTON_STYLE)
 
     async def install(_event: ft.Event) -> None:
         button.disabled = True

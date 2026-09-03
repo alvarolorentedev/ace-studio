@@ -6,7 +6,7 @@ import flet as ft
 
 from ..hardware import recommended_models
 from ..runtime import DIT_MODELS, LM_MODELS, SUPPORTED_COMMIT
-from ..theme import GREEN, MUTED
+from ..theme import FIELD_STYLE, GREEN, MUTED, PRIMARY_BUTTON_STYLE
 
 
 def build(studio) -> ft.AlertDialog:
@@ -20,11 +20,13 @@ def build(studio) -> ft.AlertDialog:
         label="Generation model",
         value=selected_dit,
         options=[ft.DropdownOption(key=name, text=name) for name in (installed_dit or [selected_dit])],
+        **FIELD_STYLE,
     )
     lm = ft.Dropdown(
         label="Language model",
         value=selected_lm or "disabled",
         options=[ft.DropdownOption(key="disabled", text="Disabled")] + [ft.DropdownOption(key=name, text=name) for name in installed_lm],
+        **FIELD_STYLE,
     )
 
     def close(_event: ft.Event) -> None:
@@ -98,6 +100,7 @@ def build(studio) -> ft.AlertDialog:
             value=str(adapter.scale),
             width=100,
             options=[ft.DropdownOption(key=str(value), text=str(value)) for value in (0.25, 0.5, 0.75, 1.0)],
+            **FIELD_STYLE,
         )
 
         async def activate(_event: ft.Event, adapter_id=adapter.id, selected_scale=scale) -> None:
@@ -133,7 +136,7 @@ def build(studio) -> ft.AlertDialog:
             studio.page.show_dialog(studio.settings_dialog())
 
         def rename_adapter(_event: ft.Event, adapter_id=adapter.id, current_name=adapter.name) -> None:
-            new_name = ft.TextField(label="Adapter name", value=current_name, autofocus=True)
+            new_name = ft.TextField(label="Adapter name", value=current_name, autofocus=True, **FIELD_STYLE)
 
             def save_name(_save_event: ft.Event) -> None:
                 if not new_name.value.strip():
@@ -151,7 +154,7 @@ def build(studio) -> ft.AlertDialog:
                     content=new_name,
                     actions=[
                         ft.TextButton("Cancel", on_click=lambda _e: studio.page.pop_dialog()),
-                        ft.Button("Save", on_click=save_name),
+                        ft.Button("Save", style=PRIMARY_BUTTON_STYLE, on_click=save_name),
                     ],
                 )
             )
@@ -181,24 +184,32 @@ def build(studio) -> ft.AlertDialog:
         [
             studio.heading("Settings", "Models, runtime, and storage."),
             ft.Text("Models & runtime", size=20, weight=ft.FontWeight.W_600),
-            ft.Row(
+            ft.ResponsiveRow(
                 [
-                    studio.card(
-                        ft.Icon(ft.Icons.MEMORY, color=GREEN, size=36),
-                        ft.Text("Hardware", size=20, weight=ft.FontWeight.W_600),
-                        ft.Text(report.summary),
-                        ft.Text(report.profile.value, color=MUTED),
-                        expand=True,
+                    ft.Container(
+                        studio.card(
+                            ft.Icon(ft.Icons.MEMORY, color=GREEN, size=36),
+                            ft.Text("Hardware", size=20, weight=ft.FontWeight.W_600),
+                            ft.Text(report.summary),
+                            ft.Text(report.profile.value, color=MUTED),
+                            expand=True,
+                        ),
+                        col={"sm": 12, "lg": 6},
                     ),
-                    studio.card(
-                        ft.Icon(ft.Icons.SYSTEM_UPDATE, color=GREEN, size=36),
-                        ft.Text("ACE-Step 1.5", size=20, weight=ft.FontWeight.W_600),
-                        ft.Text(f"Supported commit {SUPPORTED_COMMIT[:10]}"),
-                        ft.Text(f"Installed {(manifest.commit[:10] if manifest else 'not installed')}", color=MUTED),
-                        ft.Button("Reinstall supported runtime", on_click=update),
-                        expand=True,
+                    ft.Container(
+                        studio.card(
+                            ft.Icon(ft.Icons.SYSTEM_UPDATE, color=GREEN, size=36),
+                            ft.Text("ACE-Step 1.5", size=20, weight=ft.FontWeight.W_600),
+                            ft.Text(f"Supported commit {SUPPORTED_COMMIT[:10]}"),
+                            ft.Text(f"Installed {(manifest.commit[:10] if manifest else 'not installed')}", color=MUTED),
+                            ft.Button("Reinstall supported runtime", on_click=update),
+                            expand=True,
+                        ),
+                        col={"sm": 12, "lg": 6},
                     ),
-                ]
+                ],
+                spacing=16,
+                run_spacing=16,
             ),
             studio.card(
                 ft.Text("Active models", size=20, weight=ft.FontWeight.W_600),
@@ -210,7 +221,7 @@ def build(studio) -> ft.AlertDialog:
                 ),
                 dit,
                 lm,
-                ft.Button("Save selection", icon=ft.Icons.SAVE, bgcolor=GREEN, color="#07140B", on_click=save),
+                ft.Button("Save selection", icon=ft.Icons.SAVE, style=PRIMARY_BUTTON_STYLE, on_click=save),
             ),
             studio.card(ft.Text("Available models", size=20, weight=ft.FontWeight.W_600), *model_rows),
             studio.card(
@@ -233,6 +244,6 @@ def build(studio) -> ft.AlertDialog:
         ],
         spacing=18,
         width=780,
-        height=610,
+        height=560,
     )
     return ft.AlertDialog(modal=True, content=content, actions=[ft.TextButton("Close", on_click=close)])

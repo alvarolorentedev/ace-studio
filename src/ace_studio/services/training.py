@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from ..api import AceClient
@@ -45,6 +48,70 @@ class TrainingService:
     def task_status(self, kind: str, task_id: str) -> dict[str, Any]:
         client = self._client()
         return client.auto_label_status(task_id) if kind == "label" else client.preprocess_status(task_id)
+
+    def run_pipeline(
+        self,
+        audio_dir: str,
+        name: str,
+        tag: str,
+        instrumental: bool,
+        request: TrainingRequest,
+        progress_callback: Callable[[dict[str, Any]], None] | None = None,
+        cancel_event: Event | None = None,
+    ) -> Path:
+        def report(stage: str, **value: Any) -> None:
+            if progress_callback:
+                progress_callback({"stage": stage, **value})
+
+        def cancelled() -> None:
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("Training cancelled")
+
+        def wait_for_task(kind: str, task_id: str, stage: str) -> None:
+            while True:
+                cancelled()
+                value = self.task_status(kind, task_id)
+                report(stage, **value)
+                if value.get("status") == "completed":
+                    return
+                if value.get("status") == "failed":
+                    raise RuntimeError(value.get("error") or f"{stage} failed")
+                time.sleep(1)
+
+        cancelled()
+        report("Scanning dataset", progress=0)
+        samples = self.scan(audio_dir, name, tag, instrumental)
+        dataset_path = self.save(name, tag, instrumental)
+        report("Dataset saved", progress=1, samples=len(samples), samples_data=samples)
+
+        if any(not sample.labeled for sample in samples) and self.generation.runtime.selected_models()[1]:
+            report("Auto-labeling")
+            wait_for_task("label", self.auto_label(dataset_path), "Auto-labeling")
+
+        cancelled()
+        report("Preprocessing")
+        task_id, tensor_dir = self.preprocess(name)
+        wait_for_task("preprocess", task_id, "Preprocessing")
+        request.tensor_dir = str(tensor_dir)
+
+        cancelled()
+        report("Training", progress=0)
+        self.start(request)
+        while True:
+            if cancel_event and cancel_event.is_set():
+                self.stop()
+                raise InterruptedError("Training cancelled")
+            value = self.status()
+            report("Training", **value)
+            if not value.get("is_training"):
+                if value.get("error"):
+                    raise RuntimeError(value["error"])
+                break
+            time.sleep(1)
+
+        cancelled()
+        report("Registering adapter", progress=1)
+        return self.export(name, request.kind, request.output_dir)
 
     def start(self, request: TrainingRequest) -> dict[str, Any]:
         client = self._client()

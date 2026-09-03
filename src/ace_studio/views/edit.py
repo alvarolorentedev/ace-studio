@@ -6,11 +6,22 @@ from threading import Event
 import flet as ft
 
 from ..models import TRACK_NAMES, EditRequest
-from ..theme import BORDER, GREEN, MUTED, RAISED
+from ..theme import (
+    BORDER,
+    DANGER_BUTTON_STYLE,
+    FIELD_STYLE,
+    GREEN,
+    INPUT,
+    MUTED,
+    PRIMARY_BUTTON_STYLE,
+    RAISED,
+    SUCCESS_SURFACE,
+    WARNING,
+)
 
 
 def build(studio) -> ft.Control:
-    source = ft.TextField(label="Source WAV", read_only=True, expand=True)
+    source = ft.TextField(label="Source WAV", read_only=True, expand=True, **FIELD_STYLE)
     picker = ft.FilePicker()
     studio.page.services.append(picker)
     tracks = studio.storage.generations()
@@ -18,6 +29,7 @@ def build(studio) -> ft.Control:
         label="Or choose from library",
         options=[ft.DropdownOption(key=item["id"], text=item["title"]) for item in tracks],
         expand=True,
+        **FIELD_STYLE,
     )
     by_id = {item["id"]: item for item in tracks}
     mode_specs = (
@@ -32,10 +44,10 @@ def build(studio) -> ft.Control:
         value="repaint",
         content=ft.Column(spacing=8),
     )
-    prompt = ft.TextField(label="Edit description", multiline=True, min_lines=4, expand=True)
-    lyrics = ft.TextField(label="Lyrics (optional)", multiline=True, min_lines=3, expand=True)
-    start = ft.TextField(label="Start (seconds)", value="0", width=160)
-    end = ft.TextField(label="End (seconds)", value="30", width=160)
+    prompt = ft.TextField(label="Edit description", multiline=True, min_lines=4, expand=True, **FIELD_STYLE)
+    lyrics = ft.TextField(label="Lyrics (optional)", multiline=True, min_lines=3, expand=True, **FIELD_STYLE)
+    start = ft.TextField(label="Start (seconds)", value="0", width=160, **FIELD_STYLE)
+    end = ft.TextField(label="End (seconds)", value="30", width=160, **FIELD_STYLE)
     repaint_range = ft.Row([start, end])
     strength = ft.Slider(min=0, max=1, value=0.8, divisions=20)
     strength_row = ft.Column([ft.Text("Source preservation"), strength])
@@ -43,15 +55,16 @@ def build(studio) -> ft.Control:
         label="Instrument track",
         options=[ft.DropdownOption(key=name, text=name.replace("_", " ").title()) for name in TRACK_NAMES],
         expand=True,
+        **FIELD_STYLE,
     )
     track_checks = [ft.Checkbox(label=name.replace("_", " ").title()) for name in TRACK_NAMES]
     complete_tracks = ft.Column([ft.Text("Tracks to complete"), ft.Row(track_checks, wrap=True)])
-    warning = ft.Text(color="#E5B95C")
+    warning = ft.Text(color=WARNING)
     status = ft.Text("Ready")
     result_status = ft.Text("No edit run yet.", color=MUTED)
-    progress = ft.ProgressBar(value=0, color=GREEN, bgcolor="#34403B")
-    run = ft.Button("Run edit", icon=ft.Icons.AUTO_FIX_HIGH, bgcolor=GREEN, color="#07140B")
-    stop = ft.Button("Stop", icon=ft.Icons.STOP, visible=False)
+    progress = ft.ProgressBar(value=0)
+    run = ft.Button("Run edit", icon=ft.Icons.AUTO_FIX_HIGH, style=PRIMARY_BUTTON_STYLE)
+    stop = ft.Button("Stop", icon=ft.Icons.STOP, visible=False, style=DANGER_BUTTON_STYLE)
     cancel_event: Event | None = None
 
     def choose_mode(selected: str) -> None:
@@ -106,7 +119,7 @@ def build(studio) -> ft.Control:
         for key, card in mode_cards.items():
             selected = key == mode.value
             card.border = ft.Border.all(1, GREEN if selected else BORDER)
-            card.bgcolor = "#17211A" if selected else RAISED
+            card.bgcolor = SUCCESS_SURFACE if selected else RAISED
         studio.page.update()
 
     async def submit(_event: ft.Event) -> None:
@@ -174,7 +187,7 @@ def build(studio) -> ft.Control:
         ft.Text("Source", size=17, weight=ft.FontWeight.W_600),
         ft.Container(
             ft.Row([ft.Icon(ft.Icons.AUDIO_FILE, color=MUTED, size=30), source, ft.Button("Choose WAV", on_click=choose)]),
-            bgcolor="#0E1312",
+            bgcolor=INPUT,
             border=ft.Border.all(1, BORDER),
             border_radius=8,
             padding=12,
@@ -224,10 +237,13 @@ def build(studio) -> ft.Control:
     return ft.Column(
         [
             studio.heading("Edit a track", "Transform, rearrange, or extend an existing WAV with ACE-Step."),
-            ft.Row(
-                [source_panel, settings_panel],
+            ft.ResponsiveRow(
+                [
+                    ft.Container(source_panel, col={"sm": 12, "lg": 5}),
+                    ft.Container(settings_panel, col={"sm": 12, "lg": 7}),
+                ],
                 spacing=18,
-                vertical_alignment=ft.CrossAxisAlignment.START,
+                run_spacing=18,
             ),
         ],
         spacing=18,
