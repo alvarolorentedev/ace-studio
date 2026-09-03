@@ -98,6 +98,7 @@ class GenerationRequest:
     key_scale: str = ""
     time_signature: str = ""
     instrumental: bool = False
+    vocal_language: str = "en"
     model: str | None = None
     thinking: bool = True
     batch_size: int = 2
@@ -118,7 +119,7 @@ class GenerationRequest:
             "lyrics": self.lyrics,
             "task_type": self.task_type,
             "audio_duration": self.duration,
-            "vocal_language": "unknown" if self.instrumental else "en",
+            "vocal_language": "unknown" if self.instrumental else self.vocal_language,
             "thinking": self.thinking,
             "batch_size": self.batch_size,
             "use_random_seed": self.seed is None,

@@ -58,6 +58,27 @@ def build(studio) -> ft.Control:
         expand=True,
         **FIELD_STYLE,
     )
+    language = ft.Dropdown(
+        label="Lyrics language",
+        value="en",
+        options=[
+            ft.DropdownOption(key=code, text=name)
+            for code, name in [
+                ("en", "English"),
+                ("es", "Spanish"),
+                ("fr", "French"),
+                ("de", "German"),
+                ("it", "Italian"),
+                ("pt", "Portuguese"),
+                ("zh", "Chinese"),
+                ("ja", "Japanese"),
+                ("ko", "Korean"),
+            ]
+        ],
+        dense=True,
+        expand=True,
+        **FIELD_STYLE,
+    )
     instrumental = ft.Switch(value=False, active_color=GREEN)
     thinking = ft.Switch(label="Use language model reasoning", value=True, active_color=GREEN)
     batch = ft.Dropdown(
@@ -154,7 +175,7 @@ def build(studio) -> ft.Control:
         studio.page.update()
         try:
             client = await asyncio.to_thread(studio._ensure_client)
-            result = await asyncio.to_thread(client.create_sample, prompt.value.strip(), instrumental.value)
+            result = await asyncio.to_thread(client.create_sample, prompt.value.strip(), instrumental.value, language.value)
             prompt.value = result.get("caption") or prompt.value
             lyrics.value = result.get("lyrics") or lyrics.value
             studio.notice("ACE developed your idea into a complete song brief.")
@@ -199,6 +220,7 @@ def build(studio) -> ft.Control:
                 key_scale="" if key.value == "Auto" else key.value,
                 time_signature="" if signature.value == "Auto" else signature.value,
                 instrumental=instrumental.value,
+                vocal_language=language.value,
                 thinking=thinking.value,
                 batch_size=int(batch.value),
                 seed=int(seed.value) if seed.value.strip() else None,
@@ -403,6 +425,7 @@ def build(studio) -> ft.Control:
                 ft.Container(height=8),
                 ft.Row([key], spacing=0),
                 ft.Row([signature], spacing=0),
+                ft.Row([language], spacing=0),
                 ft.Row([ft.Icon(ft.Icons.MIC_OFF, color=MUTED), ft.Text("Instrumental", expand=True), instrumental]),
                 ft.Row([adapter, adapter_scale], spacing=10),
                 ft.Container(height=6),
