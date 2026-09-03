@@ -23,7 +23,10 @@ class HardwareTest(unittest.TestCase):
             patch("pathlib.Path.read_text", return_value="MemTotal:       4194304 kB\n"),
         ):
             self.assertEqual(hardware._memory_gb(), 4)
-        with patch("ace_studio.hardware.subprocess.check_output", side_effect=subprocess.SubprocessError):
+        with (
+            patch("ace_studio.hardware.sys.platform", "darwin"),
+            patch("ace_studio.hardware.subprocess.check_output", side_effect=subprocess.SubprocessError),
+        ):
             self.assertIsNone(hardware._memory_gb())
 
     def test_gpu_detection_uses_platform_commands_and_cpu_fallback(self):
