@@ -173,11 +173,27 @@ def build(studio) -> ft.Control:
         develop.disabled = True
         develop.content = "Developing…"
         studio.page.update()
+
+        query = prompt.value.strip()
+        details = []
+        if instrumental.value:
+            details.append("Instrumental track")
+        else:
+            language_name = next((opt.text for opt in language.options if opt.key == language.value), language.value)
+            details.append(f"Vocals in {language_name}")
+        details.append(f"{int(bpm.value)} BPM")
+        if key.value != "Auto":
+            details.append(f"Key: {key.value}")
+        if signature.value != "Auto":
+            details.append(f"Time signature: {signature.value}")
+        if details:
+            query = f"{query}. {', '.join(details)}."
+
         try:
             client = await asyncio.to_thread(studio._ensure_client)
             result = await asyncio.to_thread(
                 client.create_sample,
-                prompt.value.strip(),
+                query,
                 instrumental.value,
                 language.value,
                 duration=float(duration.value),
