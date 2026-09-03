@@ -13,50 +13,15 @@ from ..theme import (
     ERROR_SURFACE,
     FIELD_STYLE,
     GREEN,
-    INPUT,
     MUTED,
     PRIMARY_BUTTON_STYLE,
     RAISED,
     SUCCESS_BORDER,
     SUCCESS_SURFACE,
-    TEXT,
 )
 
 
 def build(studio) -> ft.Control:
-    def inspector_picker(label: str, initial: str, options: list[str]) -> tuple[ft.PopupMenuButton, dict[str, str]]:
-        selected = {"value": initial}
-        value = ft.Text(initial, color=TEXT, weight=ft.FontWeight.W_600)
-
-        def choose(choice: str) -> None:
-            selected["value"] = choice
-            value.value = choice
-            studio.page.update()
-
-        return (
-            ft.PopupMenuButton(
-                content=ft.Container(
-                    content=ft.Column(
-                        [
-                            ft.Text(label, size=11, color=MUTED),
-                            ft.Row([value, ft.Container(expand=True), ft.Icon(ft.Icons.ARROW_DROP_DOWN, color=MUTED)]),
-                        ],
-                        spacing=0,
-                    ),
-                    bgcolor=INPUT,
-                    border=ft.Border.all(1, BORDER),
-                    border_radius=8,
-                    padding=ft.Padding.symmetric(horizontal=12, vertical=8),
-                ),
-                items=[ft.PopupMenuItem(content=choice, on_click=lambda _event, choice=choice: choose(choice)) for choice in options],
-                padding=0,
-                style=ft.ButtonStyle(overlay_color=ft.Colors.TRANSPARENT, shape=ft.RoundedRectangleBorder(radius=8)),
-                tooltip="",
-                expand=True,
-            ),
-            selected,
-        )
-
     prompt = ft.TextField(
         value="",
         hint_text="A nostalgic synthwave track with driving drums, warm pads, and a hopeful mood.",
@@ -77,8 +42,22 @@ def build(studio) -> ft.Control:
     duration = ft.Slider(min=30, max=600, value=120, divisions=57)
     bpm_value = ft.Text("120", weight=ft.FontWeight.W_600)
     bpm = ft.Slider(min=40, max=200, value=120, divisions=160)
-    key, key_selection = inspector_picker("Key", "A minor", ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"])
-    signature, signature_selection = inspector_picker("Time signature", "4/4", ["Auto", "4/4", "3/4", "6/8"])
+    key = ft.Dropdown(
+        label="Key",
+        value="A minor",
+        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"]],
+        dense=True,
+        expand=True,
+        **FIELD_STYLE,
+    )
+    signature = ft.Dropdown(
+        label="Time signature",
+        value="4/4",
+        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "4/4", "3/4", "6/8"]],
+        dense=True,
+        expand=True,
+        **FIELD_STYLE,
+    )
     instrumental = ft.Switch(value=False, active_color=GREEN)
     thinking = ft.Switch(label="Use language model reasoning", value=True, active_color=GREEN)
     batch = ft.Dropdown(
@@ -149,8 +128,8 @@ def build(studio) -> ft.Control:
                 lyrics.value.strip(),
                 duration=duration.value,
                 bpm=int(bpm.value),
-                key_scale="" if key_selection["value"] == "Auto" else key_selection["value"],
-                time_signature="" if signature_selection["value"] == "Auto" else signature_selection["value"],
+                key_scale="" if key.value == "Auto" else key.value,
+                time_signature="" if signature.value == "Auto" else signature.value,
             )
             if kind == "music":
                 prompt.value = result.get("caption") or prompt.value
@@ -217,8 +196,8 @@ def build(studio) -> ft.Control:
                 lyrics=lyrics.value.strip(),
                 duration=float(duration.value),
                 bpm=int(bpm.value),
-                key_scale="" if key_selection["value"] == "Auto" else key_selection["value"],
-                time_signature="" if signature_selection["value"] == "Auto" else signature_selection["value"],
+                key_scale="" if key.value == "Auto" else key.value,
+                time_signature="" if signature.value == "Auto" else signature.value,
                 instrumental=instrumental.value,
                 thinking=thinking.value,
                 batch_size=int(batch.value),
