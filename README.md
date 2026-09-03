@@ -21,15 +21,17 @@ Release installers are unsigned. Your operating system may ask you to explicitly
 - Generate songs from a text description, with optional lyrics.
 - Set duration (30 seconds–10 minutes), BPM, key, time signature, instrumental mode, seed, guidance, and up to four versions per run.
 - Use ACE-Step’s language model to improve a music prompt or lyric draft, develop a short idea, or start from a random prompt.
+- Edit WAV tracks with cover, repaint, LEGO, extract, and complete workflows, then save the result to your library.
+- Prepare raw-audio datasets, train LoRA or LoKr adapters, and load exported adapters for generation.
 - Play generated tracks in the app, save a copy, search your library, rename tracks, and mark favorites.
 - Let ACE Studio detect Apple Silicon, NVIDIA, AMD, Intel, or CPU-only hardware and install a matching ACE-Step runtime.
-- Select and download alternate generation and language models from Settings, then check for ACE-Step updates without replacing a working runtime until the update passes a compatibility probe.
+- Select and download alternate generation and language models from Settings, and reinstall the pinned supported ACE-Step runtime without replacing a working runtime unless its compatibility probe passes.
 
 ## First launch
 
 1. Open ACE Studio and review the detected hardware profile and recommended models.
 2. Select **Install ACE-Step**.
-3. Wait while the app downloads the current ACE-Step release, creates an isolated runtime, installs dependencies, and downloads the recommended model(s).
+3. Wait while the app downloads the supported ACE-Step revision, creates an isolated runtime, installs dependencies, and downloads the recommended model(s).
 4. Enter a music description (and optionally lyrics) on **Create**, then select **Generate**.
 
 The first setup can take several minutes and multiple gigabytes, depending on the selected models and connection. Later launches reuse the installed runtime and models.
@@ -52,19 +54,19 @@ Every completed version is copied into the local library automatically. Play tra
 
 ### Edit
 
-Choose a WAV file and prepare an edit request. The interface supports repaint, extend, cover, extract, LEGO, and complete modes, with an instruction and a target time range. Audio editing is currently a preview: the form is available, but **Run edit** is not yet connected to the ACE-Step workflow.
+Choose a WAV file or a track from your library, then run cover, repaint, LEGO, extract, or complete/extend. Repaint accepts a target time range, cover exposes source-preservation strength, and the track-aware modes let you select instruments. LEGO, extract, and complete require a Base-family generation model.
 
 ![ACE Studio's Edit workspace](docs/screenshots/edit.jpg)
 
 ### Train
 
-Prepare a LoRA or LoKr adapter-training job by choosing a dataset folder and configuring its step count and learning rate. Adapter training is currently a preview: dataset selection, training, checkpoints, and logs are not yet connected to an executable workflow.
+Choose a raw-audio folder, review track metadata, optionally auto-label it with an installed language model, preprocess tensors, and train LoRA or LoKr. Progress and failures are shown in the app; completed checkpoints can be exported, registered, and loaded from Settings with a configurable strength.
 
 ![ACE Studio's Train workspace](docs/screenshots/train.jpg)
 
 ### Settings
 
-See the detected hardware, download supported models, choose active generation and language models, and check for an ACE-Step update. Updates are staged and probed before activation, so a failed update leaves the existing runtime active.
+See the detected hardware, download supported models, choose active generation and language models, manage adapters, and reinstall the pinned ACE-Step revision. Reinstalls are staged and probed before activation, so a failure leaves the existing runtime active.
 
 ![ACE Studio's Settings workspace](docs/screenshots/settings.jpg)
 
@@ -111,8 +113,8 @@ make run
 ```bash
 make help       # list available commands
 make run-web    # run the development UI in a browser
-make test       # run tests
-make check      # run tests, compile checks, and diff whitespace checks
+make test       # run tests and enforce branch coverage
+make check      # run tests, Ruff, compile checks, and diff whitespace checks
 ```
 
 To build a local application bundle, first stage the packaged runtime and then use the platform target:

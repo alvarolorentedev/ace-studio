@@ -11,6 +11,13 @@ dependencies = [
     "uv==0.12.8",
 ]
 
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.10,<8",
+    "flet-cli==0.86.5",
+    "ruff>=0.12,<1",
+]
+
 [project.scripts]
 ace-studio = "ace_studio.app:run"
 
@@ -48,3 +55,19 @@ packages = true
 [tool.flet.flutter.pubspec.dependency_overrides]
 # 7.3.1 references NWPath.isUltraConstrained, which requires the macOS 26 SDK.
 connectivity_plus = "7.0.0"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 140
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.coverage.run]
+branch = true
+source = ["ace_studio"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = true

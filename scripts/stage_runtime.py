@@ -8,7 +8,6 @@ from pathlib import Path
 
 from uv import find_uv_bin
 
-
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "src" / "assets" / "bin"
 

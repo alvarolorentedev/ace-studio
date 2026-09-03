@@ -6,7 +6,9 @@ import sqlite3
 import sys
 from contextlib import closing
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+
+from .models import Adapter
 
 
 def default_data_root() -> Path:
@@ -74,6 +76,11 @@ class Storage:
                 );
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(adapters)")}
+            if "scale" not in columns:
+                connection.execute("ALTER TABLE adapters ADD COLUMN scale REAL NOT NULL DEFAULT 1")
+            if "active" not in columns:
+                connection.execute("ALTER TABLE adapters ADD COLUMN active INTEGER NOT NULL DEFAULT 0")
             connection.commit()
 
     def save_generation(
@@ -90,9 +97,14 @@ class Storage:
         with closing(self.connect()) as connection:
             connection.execute(
                 """
-                INSERT OR REPLACE INTO generations
+                INSERT INTO generations
                     (id, title, task_type, audio_path, prompt, lyrics, metadata_json, parent_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title=excluded.title, task_type=excluded.task_type,
+                    audio_path=excluded.audio_path, prompt=excluded.prompt,
+                    lyrics=excluded.lyrics, metadata_json=excluded.metadata_json,
+                    parent_id=excluded.parent_id
                 """,
                 (generation_id, title, task_type, audio_path, prompt, lyrics, json.dumps(metadata), parent_id),
             )
@@ -102,13 +114,19 @@ class Storage:
         query = "SELECT * FROM generations"
         values: list[Any] = []
         if search:
-            query += " WHERE title LIKE ? OR prompt LIKE ?"
-            values.extend([f"%{search}%", f"%{search}%"])
+            escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            query += " WHERE title LIKE ? ESCAPE '\\' OR prompt LIKE ? ESCAPE '\\'"
+            values.extend([f"%{escaped}%", f"%{escaped}%"])
         query += " ORDER BY favorite DESC, created_at DESC LIMIT ?"
         values.append(limit)
         with closing(self.connect()) as connection:
             rows = connection.execute(query, values).fetchall()
         return [{**dict(row), "metadata": json.loads(row["metadata_json"])} for row in rows]
+
+    def generation(self, generation_id: str) -> dict[str, Any] | None:
+        with closing(self.connect()) as connection:
+            row = connection.execute("SELECT * FROM generations WHERE id = ?", (generation_id,)).fetchone()
+        return {**dict(row), "metadata": json.loads(row["metadata_json"])} if row else None
 
     def toggle_favorite(self, generation_id: str) -> bool:
         with closing(self.connect()) as connection:
@@ -163,6 +181,40 @@ class Storage:
             )
             connection.commit()
 
-    def adapters(self) -> Iterable[sqlite3.Row]:
+    def adapters(self) -> list[Adapter]:
         with closing(self.connect()) as connection:
-            return connection.execute("SELECT * FROM adapters ORDER BY created_at DESC").fetchall()
+            rows = connection.execute("SELECT * FROM adapters ORDER BY created_at DESC").fetchall()
+        return [
+            Adapter(
+                id=row["id"],
+                name=row["name"],
+                path=row["path"],
+                kind=row["kind"],
+                scale=row["scale"],
+                active=bool(row["active"]),
+                metadata=json.loads(row["metadata_json"]),
+            )
+            for row in rows
+        ]
+
+    def update_adapter(self, adapter_id: str, *, name: str | None = None, scale: float | None = None, active: bool | None = None) -> None:
+        changes: list[str] = []
+        values: list[Any] = []
+        for column, value in (("name", name), ("scale", scale), ("active", int(active) if active is not None else None)):
+            if value is not None:
+                changes.append(f"{column} = ?")
+                values.append(value)
+        if not changes:
+            return
+        values.append(adapter_id)
+        with closing(self.connect()) as connection:
+            if active:
+                connection.execute("UPDATE adapters SET active = 0")
+            connection.execute(f"UPDATE adapters SET {', '.join(changes)} WHERE id = ?", values)
+            connection.commit()
+
+    def delete_adapter(self, adapter_id: str) -> bool:
+        with closing(self.connect()) as connection:
+            result = connection.execute("DELETE FROM adapters WHERE id = ?", (adapter_id,))
+            connection.commit()
+        return result.rowcount > 0

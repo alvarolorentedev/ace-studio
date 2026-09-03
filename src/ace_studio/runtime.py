@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import platform
 import secrets
 import shutil
 import socket
@@ -16,13 +15,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .models import HardwareReport, RuntimeManifest, RuntimeProfile, RuntimeState
+from .hardware import detect_hardware, recommended_models
+from .models import RuntimeManifest, RuntimeProfile, RuntimeState
 from .storage import Storage
 
-
 ProgressCallback = Callable[[str, float | None], None]
-GITHUB_COMMIT_API = "https://api.github.com/repos/ace-step/ACE-Step-1.5/commits/main"
 GITHUB_ARCHIVE = "https://github.com/ace-step/ACE-Step-1.5/archive/{commit}.tar.gz"
+SUPPORTED_COMMIT = "ca1e85fe9430179831e6bc6be790c332190a3866"
 DIT_MODELS = (
     "acestep-v15-turbo",
     "acestep-v15-base",
@@ -47,114 +46,6 @@ def _bundled_file(*names: str) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
-
-
-def _memory_gb() -> float | None:
-    try:
-        if sys.platform == "darwin":
-            value = subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True, timeout=3)
-            return int(value) / 1024**3
-        if sys.platform == "win32":
-            command = [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
-            ]
-            return int(subprocess.check_output(command, text=True, timeout=5).strip()) / 1024**3
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            if line.startswith("MemTotal:"):
-                return int(line.split()[1]) * 1024 / 1024**3
-    except (OSError, ValueError, subprocess.SubprocessError):
-        return None
-    return None
-
-
-def _gpu_name() -> str:
-    commands: list[list[str]] = []
-    if sys.platform == "darwin":
-        return platform.processor() or "Apple Silicon"
-    if sys.platform == "win32":
-        commands.append(
-            [
-                "powershell",
-                "-NoProfile",
-                "-Command",
-                "(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join ', '",
-            ]
-        )
-    else:
-        commands.extend([["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], ["lspci"]])
-    for command in commands:
-        try:
-            value = subprocess.check_output(command, stderr=subprocess.DEVNULL, text=True, timeout=5).strip()
-            if value:
-                return value.splitlines()[0]
-        except (OSError, subprocess.SubprocessError):
-            continue
-    return "CPU"
-
-
-def detect_hardware() -> HardwareReport:
-    os_name = platform.system()
-    architecture = platform.machine().lower()
-    processor = platform.processor() or architecture
-    gpu = _gpu_name()
-    gpu_lower = gpu.lower()
-    notes: list[str] = []
-    driver_ready = True
-
-    if sys.platform == "darwin":
-        profile = RuntimeProfile.MACOS_MLX
-        driver_ready = architecture in {"arm64", "aarch64"}
-        if not driver_ready:
-            notes.append("ACE-Step's macOS acceleration requires Apple Silicon.")
-    elif sys.platform == "win32":
-        if "nvidia" in gpu_lower:
-            profile = RuntimeProfile.WINDOWS_CUDA
-        elif "amd" in gpu_lower or "radeon" in gpu_lower:
-            profile = RuntimeProfile.WINDOWS_ROCM
-        elif "intel" in gpu_lower and ("arc" in gpu_lower or "iris" in gpu_lower):
-            profile = RuntimeProfile.WINDOWS_XPU
-        else:
-            profile = RuntimeProfile.WINDOWS_CPU
-            notes.append("No supported GPU runtime was detected; CPU mode will be used.")
-    else:
-        if "nvidia" in gpu_lower:
-            profile = RuntimeProfile.LINUX_CUDA
-        elif "amd" in gpu_lower or "radeon" in gpu_lower:
-            profile = RuntimeProfile.LINUX_ROCM
-        elif "intel" in gpu_lower and ("arc" in gpu_lower or "graphics" in gpu_lower):
-            profile = RuntimeProfile.LINUX_XPU
-        else:
-            profile = RuntimeProfile.LINUX_CPU
-            notes.append("No supported GPU runtime was detected; CPU mode will be used.")
-
-    return HardwareReport(
-        os_name=os_name,
-        architecture=architecture,
-        processor=processor,
-        memory_gb=_memory_gb(),
-        gpu_name=gpu,
-        profile=profile,
-        driver_ready=driver_ready,
-        notes=notes,
-    )
-
-
-def recommended_models(report: HardwareReport) -> tuple[str, str | None]:
-    memory = report.memory_gb or 0
-    if report.profile in {RuntimeProfile.WINDOWS_CPU, RuntimeProfile.LINUX_CPU} or memory <= 6:
-        return "acestep-v15-turbo", None
-    # Apple Silicon shares memory with macOS, the DiT, and the LM. Keep 16 GB
-    # machines on the smaller LM to leave practical headroom during decoding.
-    if report.profile == RuntimeProfile.MACOS_MLX and memory <= 16:
-        return "acestep-v15-turbo", "acestep-5Hz-lm-0.6B"
-    if memory < 16:
-        return "acestep-v15-turbo", "acestep-5Hz-lm-0.6B"
-    if memory < 24:
-        return "acestep-v15-turbo", "acestep-5Hz-lm-1.7B"
-    return "acestep-v15-xl-turbo", "acestep-5Hz-lm-1.7B"
 
 
 class RuntimeManager:
@@ -193,8 +84,16 @@ class RuntimeManager:
                 return dit, lm
         except (OSError, ValueError, KeyError, TypeError):
             pass
-        dit = recommended[0] if self.model_installed(recommended[0]) else next((name for name in DIT_MODELS if self.model_installed(name)), recommended[0])
-        lm = recommended[1] if recommended[1] and self.model_installed(recommended[1]) else next((name for name in LM_MODELS if self.model_installed(name)), None)
+        dit = (
+            recommended[0]
+            if self.model_installed(recommended[0])
+            else next((name for name in DIT_MODELS if self.model_installed(name)), recommended[0])
+        )
+        lm = (
+            recommended[1]
+            if recommended[1] and self.model_installed(recommended[1])
+            else next((name for name in LM_MODELS if self.model_installed(name)), None)
+        )
         return dit, lm
 
     def select_models(self, dit: str, lm: str | None) -> None:
@@ -232,9 +131,7 @@ class RuntimeManager:
         )
 
     def latest_commit(self) -> str:
-        request = urllib.request.Request(GITHUB_COMMIT_API, headers={"Accept": "application/vnd.github+json"})
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return str(json.load(response)["sha"])
+        return SUPPORTED_COMMIT
 
     def _uv(self) -> str:
         try:
@@ -259,16 +156,14 @@ class RuntimeManager:
         raise RuntimeError("The bundled uv runtime helper was not found.")
 
     def _bridge(self) -> Path:
-        bridge = _bundled_file("ace_studio_bridge.py", "ace_studio_bridge.pyc") or Path(__file__).resolve().parents[1] / "ace_studio_bridge.py"
+        bridge = (
+            _bundled_file("ace_studio_bridge.py", "ace_studio_bridge.pyc") or Path(__file__).resolve().parents[1] / "ace_studio_bridge.py"
+        )
         if not bridge.is_file():
             raise RuntimeError("ACE Studio's packaged runtime bridge was not found.")
         return bridge
 
     def _stage_bridge(self, source: Path) -> Path:
-        for suffix in (".py", ".pyc"):
-            bridge = source / f".ace_studio_bridge{suffix}"
-            if bridge.is_file():
-                return bridge
         bundled = self._bridge()
         bridge = source / f".ace_studio_bridge{bundled.suffix}"
         shutil.copy2(bundled, bridge)
@@ -398,7 +293,21 @@ class RuntimeManager:
         executable = self._python(source)
         if not Path(executable).exists():
             return False
-        command = [executable, "-c", "from acestep.api_server import create_app; assert create_app().routes"]
+        required = {
+            "/health",
+            "/v1/init",
+            "/release_task",
+            "/v1/dataset/scan",
+            "/v1/dataset/preprocess_async",
+            "/v1/training/status",
+            "/v1/lora/status",
+        }
+        script = (
+            "from acestep.api_server import create_app; "
+            f"required={required!r}; paths={{r.path for r in create_app().routes}}; "
+            "assert required <= paths, required - paths"
+        )
+        command = [executable, "-c", script]
         try:
             return subprocess.run(command, cwd=source, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60).returncode == 0
         except (OSError, subprocess.SubprocessError):
@@ -441,7 +350,10 @@ class RuntimeManager:
             bridge = self._stage_bridge(source)
             command = [self._python(source), str(bridge), "--host", "127.0.0.1", "--port", str(self.port)]
             log = (self.storage.logs_dir / "runtime.log").open("a", encoding="utf-8")
-            self.process = subprocess.Popen(command, cwd=source, env=environment, stdout=log, stderr=subprocess.STDOUT, text=True)
+            try:
+                self.process = subprocess.Popen(command, cwd=source, env=environment, stdout=log, stderr=subprocess.STDOUT, text=True)
+            finally:
+                log.close()
             self.state = RuntimeState.ONLINE
             return self.port, self.token
 

@@ -9,12 +9,12 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import uvicorn
-from fastapi import Depends, HTTPException
-
 from acestep.api.http.auth import verify_api_key
 from acestep.api_server import create_app
+from acestep.training.path_safety import set_safe_root
+from fastapi import Depends, HTTPException
 
-
+set_safe_root(str(Path.home()))
 app = create_app()
 
 

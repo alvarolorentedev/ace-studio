@@ -120,14 +120,17 @@ class AceClient:
         boundary = f"ace-studio-{uuid.uuid4().hex}"
         body = bytearray()
         for name, value in fields.items():
-            body.extend(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n".encode())
+            body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
         for name, filename in files.items():
             if not filename:
                 continue
             path = Path(filename)
             media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
             body.extend(
-                f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{path.name}\"\r\nContent-Type: {media_type}\r\n\r\n".encode()
+                (
+                    f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; '
+                    f'filename="{path.name}"\r\nContent-Type: {media_type}\r\n\r\n'
+                ).encode()
             )
             body.extend(path.read_bytes())
             body.extend(b"\r\n")
@@ -188,7 +191,9 @@ class AceClient:
                     first = value
                     audio_paths = value.get("raw_audio_paths") or value.get("audio_paths") or []
                 if not audio_paths:
-                    raise AceApiError("Generation finished but ACE-Step did not produce an audio file. Check the runtime log for the export error.")
+                    raise AceApiError(
+                        "Generation finished but ACE-Step did not produce an audio file. Check the runtime log for the export error."
+                    )
                 metadata = first.get("metas") or {}
                 return GenerationResult(
                     task_id=task_id,
@@ -207,3 +212,96 @@ class AceClient:
     def waveform(self, path: str, bins: int = 600) -> dict[str, Any]:
         query = urllib.parse.urlencode({"path": path, "bins": bins})
         return self._request("GET", f"/studio/v1/waveform?{query}")
+
+    # Dataset, training, and adapter calls deliberately live here so views never
+    # depend on upstream paths or response envelopes.
+    def scan_dataset(self, audio_dir: str, dataset_name: str, custom_tag: str = "", all_instrumental: bool = True) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            "/v1/dataset/scan",
+            {
+                "audio_dir": audio_dir,
+                "dataset_name": dataset_name,
+                "custom_tag": custom_tag,
+                "all_instrumental": all_instrumental,
+            },
+        )
+
+    def dataset_samples(self) -> dict[str, Any]:
+        return self.call("GET", "/v1/dataset/samples")
+
+    def update_dataset_sample(self, index: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.call("PUT", f"/v1/dataset/sample/{index}", payload)
+
+    def save_dataset(self, path: str, name: str, custom_tag: str = "", all_instrumental: bool = True) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            "/v1/dataset/save",
+            {
+                "save_path": path,
+                "dataset_name": name,
+                "custom_tag": custom_tag,
+                "all_instrumental": all_instrumental,
+            },
+        )
+
+    def auto_label_dataset(self, save_path: str, only_unlabeled: bool = True) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            "/v1/dataset/auto_label_async",
+            {
+                "save_path": save_path,
+                "only_unlabeled": only_unlabeled,
+            },
+        )
+
+    def auto_label_status(self, task_id: str) -> dict[str, Any]:
+        return self.call("GET", f"/v1/dataset/auto_label_status/{task_id}")
+
+    def preprocess_dataset(self, output_dir: str, skip_existing: bool = True) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            "/v1/dataset/preprocess_async",
+            {
+                "output_dir": output_dir,
+                "skip_existing": skip_existing,
+            },
+        )
+
+    def preprocess_status(self, task_id: str) -> dict[str, Any]:
+        return self.call("GET", f"/v1/dataset/preprocess_status/{task_id}")
+
+    def start_training(self, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
+        path = "/v1/training/start" if kind == "lora" else "/v1/training/start_lokr"
+        return self.call("POST", path, payload)
+
+    def training_status(self) -> dict[str, Any]:
+        return self.call("GET", "/v1/training/status")
+
+    def stop_training(self) -> dict[str, Any]:
+        return self.call("POST", "/v1/training/stop", {})
+
+    def export_adapter(self, output_dir: str, export_path: str) -> dict[str, Any]:
+        return self.call(
+            "POST",
+            "/v1/training/export",
+            {
+                "lora_output_dir": output_dir,
+                "export_path": export_path,
+            },
+        )
+
+    def load_adapter(self, path: str, name: str | None = None) -> dict[str, Any]:
+        return self.call("POST", "/v1/lora/load", {"lora_path": path, "adapter_name": name})
+
+    def unload_adapter(self) -> dict[str, Any]:
+        return self.call("POST", "/v1/lora/unload", {})
+
+    def toggle_adapter(self, enabled: bool) -> dict[str, Any]:
+        return self.call("POST", "/v1/lora/toggle", {"use_lora": enabled})
+
+    def set_adapter_scale(self, scale: float, name: str | None = None) -> dict[str, Any]:
+        return self.call("POST", "/v1/lora/scale", {"scale": scale, "adapter_name": name})
+
+    def adapter_status(self) -> dict[str, Any]:
+        return self.call("GET", "/v1/lora/status")

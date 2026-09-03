@@ -10,8 +10,7 @@ help: ## Show available commands
 install: .venv/.installed ## Create the Python 3.12 environment and install ACE Studio
 
 .venv/.installed: pyproject.toml
-	uv venv --python 3.12 --allow-existing .venv
-	uv pip install --python $(PYTHON) -e .
+	uv sync --python 3.12
 	@touch $@
 
 run: .venv/.installed ## Run ACE Studio locally as a desktop app
@@ -23,11 +22,13 @@ run-web: .venv/.installed ## Run the development UI in a browser
 stage-runtime: .venv/.installed ## Stage uv and the API bridge for a packaged build
 	$(PYTHON) scripts/stage_runtime.py
 
-test: .venv/.installed ## Run the test suite
-	$(PYTHON) -m unittest discover -s tests -v
+test: .venv/.installed ## Run tests with branch coverage
+	$(PYTHON) -m coverage run -m unittest discover -s tests -v
+	$(PYTHON) -m coverage report
 
-check: test ## Compile Python and check patch whitespace
-	$(PYTHON) -m compileall -q src/ace_studio src/main.py src/ace_studio_bridge.py tests
+check: test ## Lint, compile Python, and check patch whitespace
+	$(PYTHON) -m ruff check .
+	$(PYTHON) -m compileall -q src/ace_studio src/main.py src/ace_studio_bridge.py scripts tests
 	git diff --check
 
 build-macos: stage-runtime ## Build the macOS application bundle
