@@ -1,5 +1,5 @@
-PYTHON := .venv/bin/python
-FLET := .venv/bin/flet
+PYTHON := uv run python
+FLET := uv run flet
 
 .DEFAULT_GOAL := help
 .PHONY: help install stage-runtime run run-web test check build-macos build-windows build-linux clean
