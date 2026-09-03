@@ -238,7 +238,7 @@ def build(studio) -> ft.AlertDialog:
             ),
             studio.card(
                 ft.Text("About", size=20, weight=ft.FontWeight.W_600),
-                ft.Text("ACE Studio 0.1.9"),
+                ft.Text("ACE Studio 0.1.10"),
                 ft.Text("ACE-Step is installed from its official upstream repository and keeps its own license files.", color=MUTED),
             ),
         ],
