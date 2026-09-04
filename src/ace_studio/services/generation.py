@@ -66,6 +66,19 @@ class GenerationService:
     ) -> GenerationResult:
         if cancel_event and cancel_event.is_set():
             raise GenerationCancelled("Generation cancelled")
+        caps = self.runtime.generation_caps()
+        max_versions = caps["max_versions"] or 4
+        if request.batch_size > max_versions:
+            raise ValueError(
+                f"Batch size {request.batch_size} exceeds memory cap of {max_versions}. "
+                f"Lower the number of versions or switch to a higher memory mode in Settings."
+            )
+        max_duration = caps["max_duration_sec"]
+        if max_duration and request.duration > max_duration:
+            raise ValueError(
+                f"Duration {request.duration:.0f}s exceeds memory cap of {max_duration}s. "
+                f"Shorten the track or switch to a higher memory mode in Settings."
+            )
         client = self.client_ready()
         if progress_callback:
             progress_callback({"progress": 0, "stage": "Submitting", "progress_text": "Adding your song to the generation queue"})

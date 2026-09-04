@@ -5,7 +5,7 @@ from threading import Event
 
 import flet as ft
 
-from ..models import GenerationRequest
+from ..models import GenerationRequest, MemoryMode
 from ..theme import (
     BORDER,
     DANGER_BUTTON_STYLE,
@@ -18,6 +18,7 @@ from ..theme import (
     RAISED,
     SUCCESS_BORDER,
     SUCCESS_SURFACE,
+    WARNING,
 )
 
 
@@ -91,6 +92,20 @@ def build(studio) -> ft.Control:
     improve_lyrics = ft.Button("Improve lyrics", icon=ft.Icons.AUTO_FIX_HIGH, color=GREEN)
     develop = ft.Button("Develop idea", icon=ft.Icons.PSYCHOLOGY, color=GREEN)
     randomize = ft.Button("Randomize", icon=ft.Icons.SHUFFLE, color=MUTED)
+    memory = studio.runtime.get_memory_settings()
+    memory_badge_color = GREEN if memory.mode == MemoryMode.SAFE else (WARNING if memory.mode == MemoryMode.FULL else MUTED)
+    memory_badge_icon = (
+        ft.Icons.SHIELD if memory.mode == MemoryMode.SAFE
+        else (ft.Icons.WARNING if memory.mode == MemoryMode.FULL else ft.Icons.BALANCE)
+    )
+    memory_badge = ft.Row(
+        [
+            ft.Icon(memory_badge_icon, size=12, color=memory_badge_color),
+            ft.Text(f"Memory: {memory.mode.value.capitalize()}", size=11, color=memory_badge_color),
+        ],
+        spacing=4,
+        tooltip="Current memory safety mode. Change in Settings.",
+    )
     generation_progress = ft.ProgressBar(value=0)
     generation_stage = ft.Text("Preparing ACE-Step", size=16, weight=ft.FontWeight.W_600)
     generation_percent = ft.Text("0%", color=GREEN, weight=ft.FontWeight.BOLD)
@@ -417,7 +432,14 @@ def build(studio) -> ft.Control:
                                 ),
                                 randomize,
                                 ft.Container(expand=True),
-                                generate,
+                                ft.Column(
+                                    [
+                                        generate,
+                                        memory_badge,
+                                    ],
+                                    horizontal_alignment=ft.CrossAxisAlignment.END,
+                                    spacing=4,
+                                ),
                             ]
                         ),
                     ],

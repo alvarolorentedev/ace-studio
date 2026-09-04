@@ -9,7 +9,7 @@ import flet as ft
 import flet.canvas as cv
 
 from ace_studio.app import AceStudio
-from ace_studio.models import DatasetSample, HardwareReport, RuntimeProfile
+from ace_studio.models import DatasetSample, HardwareReport, LMMode, MemoryMode, MemorySettings, RuntimeProfile
 from ace_studio.storage import Storage
 from ace_studio.views import create, edit, library, settings, setup, train
 
@@ -65,6 +65,20 @@ class Runtime:
 
     def select_models(self, *_models):
         pass
+
+    def get_memory_settings(self):
+        return MemorySettings(
+            mode=MemoryMode.SAFE, lm_mode=LMMode.DISABLED,
+            max_versions=1, max_duration_sec=180,
+            training_checkpointing=True, training_max_batch=1,
+            training_max_rank=32, training_max_alpha=64,
+        )
+
+    def generation_caps(self):
+        return {"max_versions": 1, "max_duration_sec": 180}
+
+    def training_caps(self):
+        return {"gradient_checkpointing": True, "max_batch": 1, "max_rank": 32, "max_alpha": 64}
 
 
 def controls(root):
@@ -334,7 +348,7 @@ class ViewSmokeTest(unittest.TestCase):
             asyncio.run(task(*args))
             asyncio.run(find(settings_root, content="Load").on_click(None))
             settings_root = studio.page.dialog
-            scale = next(item for item in controls(settings_root) if isinstance(item, ft.Dropdown) and item.width == 100)
+            scale = next(item for item in controls(settings_root) if isinstance(item, ft.Dropdown) and item.width == 100 and not item.label)
             scale.value = "0.5"
             asyncio.run(scale.on_select(SimpleNamespace(control=scale)))
             find(settings_root, tooltip="Rename adapter").on_click(None)

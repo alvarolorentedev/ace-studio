@@ -120,6 +120,14 @@ class TrainingService:
             for adapter in self.storage.adapters():
                 if adapter.active:
                     self.storage.update_adapter(adapter.id, active=False)
+        caps = self.generation.runtime.training_caps()
+        request.gradient_checkpointing = caps["gradient_checkpointing"]
+        if request.batch_size > caps["max_batch"]:
+            request.batch_size = caps["max_batch"]
+        if request.rank > caps["max_rank"]:
+            request.rank = caps["max_rank"]
+        if request.alpha > caps["max_alpha"]:
+            request.alpha = caps["max_alpha"]
         return client.start_training(request.kind, request.payload())
 
     def status(self) -> dict[str, Any]:

@@ -35,6 +35,18 @@ class RuntimeProfile(StrEnum):
     LINUX_CPU = "linux-cpu"
 
 
+class MemoryMode(StrEnum):
+    SAFE = "safe"
+    BALANCED = "balanced"
+    FULL = "full"
+
+
+class LMMode(StrEnum):
+    DISABLED = "disabled"
+    MINIMAL = "minimal"
+    AS_SELECTED = "as-selected"
+
+
 class RuntimeState(StrEnum):
     MISSING = "missing"
     INSTALLING = "installing"
@@ -295,6 +307,102 @@ class TrainingRequest:
                 }
             )
         return defaults
+
+
+@dataclass(slots=True)
+class MemorySettings:
+    mode: MemoryMode = MemoryMode.SAFE
+    lm_mode: LMMode = LMMode.DISABLED
+    max_versions: int = 1
+    max_duration_sec: int | None = None
+    training_checkpointing: bool = True
+    training_max_batch: int = 1
+    training_max_rank: int = 32
+    training_max_alpha: int = 64
+    _override_saved: bool = field(default=False, repr=False)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode.value,
+            "lm_mode": self.lm_mode.value,
+            "max_versions": self.max_versions,
+            "max_duration_sec": self.max_duration_sec,
+            "training_checkpointing": self.training_checkpointing,
+            "training_max_batch": self.training_max_batch,
+            "training_max_rank": self.training_max_rank,
+            "training_max_alpha": self.training_max_alpha,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> MemorySettings:
+        try:
+            return cls(
+                mode=MemoryMode(value["mode"]),
+                lm_mode=LMMode(value["lm_mode"]),
+                max_versions=max(1, min(4, int(value["max_versions"]))),
+                max_duration_sec=value.get("max_duration_sec"),
+                training_checkpointing=bool(value["training_checkpointing"]),
+                training_max_batch=max(1, min(4, int(value["training_max_batch"]))),
+                training_max_rank=max(1, min(256, int(value["training_max_rank"]))),
+                training_max_alpha=max(1, min(512, int(value["training_max_alpha"]))),
+            )
+        except (KeyError, ValueError, TypeError):
+            return cls()
+
+    @classmethod
+    def detect_default(cls, report: HardwareReport) -> MemorySettings:
+        """Return hardware-detected safe default for a machine."""
+        memory = report.memory_gb or 0
+        is_cpu_only = report.profile in {
+            RuntimeProfile.WINDOWS_CPU,
+            RuntimeProfile.LINUX_CPU,
+        }
+        is_low_memory = memory <= 16 or memory == 0 or is_cpu_only
+        is_very_low = memory <= 6 or memory == 0 or is_cpu_only
+
+        if is_very_low:
+            return cls(
+                mode=MemoryMode.SAFE,
+                lm_mode=LMMode.DISABLED,
+                max_versions=1,
+                max_duration_sec=180,
+                training_checkpointing=True,
+                training_max_batch=1,
+                training_max_rank=32,
+                training_max_alpha=64,
+            )
+        if is_low_memory:
+            return cls(
+                mode=MemoryMode.SAFE,
+                lm_mode=LMMode.MINIMAL,
+                max_versions=1,
+                max_duration_sec=180,
+                training_checkpointing=True,
+                training_max_batch=1,
+                training_max_rank=32,
+                training_max_alpha=64,
+            )
+        if memory < 24:
+            return cls(
+                mode=MemoryMode.BALANCED,
+                lm_mode=LMMode.AS_SELECTED,
+                max_versions=2,
+                max_duration_sec=300,
+                training_checkpointing=True,
+                training_max_batch=1,
+                training_max_rank=64,
+                training_max_alpha=128,
+            )
+        return cls(
+            mode=MemoryMode.BALANCED,
+            lm_mode=LMMode.AS_SELECTED,
+            max_versions=2,
+            max_duration_sec=None,
+            training_checkpointing=True,
+            training_max_batch=2,
+            training_max_rank=128,
+            training_max_alpha=256,
+        )
 
 
 @dataclass(slots=True)

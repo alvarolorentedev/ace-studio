@@ -87,7 +87,12 @@ class ServiceTest(unittest.TestCase):
             adapter_path.mkdir()
             storage.add_adapter("one", "Voice", str(adapter_path), "lora", {})
             storage.update_adapter("one", active=True, scale=0.5)
-            runtime = SimpleNamespace(start=lambda: (8000, "token"), selected_models=lambda: ("base", "lm"))
+            runtime = SimpleNamespace(
+                start=lambda: (8000, "token"),
+                selected_models=lambda: ("base", "lm"),
+                generation_caps=lambda: {"max_versions": 4, "max_duration_sec": None},
+                training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+            )
             service = GenerationService(runtime, storage)
             with patch("ace_studio.services.generation.AceClient", Client):
                 client = service.client_ready()
@@ -99,7 +104,11 @@ class ServiceTest(unittest.TestCase):
     def test_edit_uses_shared_generation_and_parent_link(self):
         with tempfile.TemporaryDirectory() as directory:
             storage = Storage(Path(directory))
-            runtime = SimpleNamespace(selected_models=lambda: ("acestep-v15-base", None))
+            runtime = SimpleNamespace(
+                selected_models=lambda: ("acestep-v15-base", None),
+                generation_caps=lambda: {"max_versions": 4, "max_duration_sec": None},
+                training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+            )
             service = GenerationService(runtime, storage)
             client = FakeClient()
             source = Path(directory) / "source.wav"
@@ -119,7 +128,12 @@ class ServiceTest(unittest.TestCase):
             source = Path(directory) / "source.wav"
             source.touch()
             service = GenerationService(
-                SimpleNamespace(selected_models=lambda: ("acestep-v15-turbo", None)), Storage(Path(directory) / "data")
+                SimpleNamespace(
+                    selected_models=lambda: ("acestep-v15-turbo", None),
+                    generation_caps=lambda: {"max_versions": 4, "max_duration_sec": None},
+                    training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                ),
+                Storage(Path(directory) / "data"),
             )
             with self.assertRaisesRegex(ValueError, "Base"):
                 service.edit(EditRequest(str(source), "extract", track_name="vocals"))
@@ -127,7 +141,12 @@ class ServiceTest(unittest.TestCase):
     def test_training_export_registers_and_activates_adapter(self):
         with tempfile.TemporaryDirectory() as directory:
             storage = Storage(Path(directory))
-            generation = SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace())
+            generation = SimpleNamespace(
+                client_ready=lambda: client,
+                runtime=SimpleNamespace(
+                    training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                ),
+            )
             client = FakeClient()
             training = TrainingService(generation, storage)
             tensor_dir = Path(directory) / "tensors"
@@ -145,7 +164,15 @@ class ServiceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             storage = Storage(Path(directory))
             client = FakeClient()
-            training = TrainingService(SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace()), storage)
+            training = TrainingService(
+                SimpleNamespace(
+                    client_ready=lambda: client,
+                    runtime=SimpleNamespace(
+                        training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                    ),
+                ),
+                storage,
+            )
             samples = training.scan("/audio", "My Set")
             samples[0].caption = "ambient"
             self.assertTrue(training.update_sample(samples[0]).labeled)
@@ -173,7 +200,13 @@ class ServiceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             storage = Storage(Path(directory))
             client = PipelineClient()
-            generation = SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace(selected_models=lambda: ("turbo", "lm")))
+            generation = SimpleNamespace(
+                client_ready=lambda: client,
+                runtime=SimpleNamespace(
+                    selected_models=lambda: ("turbo", "lm"),
+                    training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                ),
+            )
             training = TrainingService(generation, storage)
             updates = []
             exported = training.run_pipeline(
@@ -207,7 +240,14 @@ class ServiceTest(unittest.TestCase):
             storage = Storage(Path(directory))
             client = FakeClient()
             training = TrainingService(
-                SimpleNamespace(client_ready=lambda: client, runtime=SimpleNamespace(selected_models=lambda: ("turbo", None))), storage
+                SimpleNamespace(
+                    client_ready=lambda: client,
+                    runtime=SimpleNamespace(
+                        selected_models=lambda: ("turbo", None),
+                        training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                    ),
+                ),
+                storage,
             )
             cancelled = Event()
             cancelled.set()
@@ -223,7 +263,15 @@ class ServiceTest(unittest.TestCase):
             storage = Storage(Path(directory))
             storage.add_adapter("gone", "Gone", "/missing", "lora", {})
             storage.update_adapter("gone", active=True)
-            training = TrainingService(SimpleNamespace(client_ready=lambda: FakeClient(), runtime=SimpleNamespace()), storage)
+            training = TrainingService(
+                SimpleNamespace(
+                    client_ready=lambda: FakeClient(),
+                    runtime=SimpleNamespace(
+                        training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+                    ),
+                ),
+                storage,
+            )
             with self.assertRaisesRegex(ValueError, "missing"):
                 training.activate("gone")
             self.assertFalse(storage.adapters()[0].active)

@@ -5,8 +5,9 @@ import asyncio
 import flet as ft
 
 from ..hardware import recommended_models
+from ..models import LMMode, MemoryMode, MemorySettings
 from ..runtime import DIT_MODELS, LM_MODELS, SUPPORTED_COMMIT
-from ..theme import FIELD_STYLE, GREEN, MUTED, PRIMARY_BUTTON_STYLE
+from ..theme import BORDER, FIELD_STYLE, GREEN, MUTED, PRIMARY_BUTTON_STYLE, RAISED, WARNING
 
 
 def build(studio) -> ft.AlertDialog:
@@ -29,6 +30,79 @@ def build(studio) -> ft.AlertDialog:
         **FIELD_STYLE,
     )
 
+    memory = studio.runtime.get_memory_settings()
+    memory_preset = ft.Dropdown(
+        label="Memory preset",
+        value=memory.mode.value,
+        options=[ft.DropdownOption(key=mode.value, text=mode.value.capitalize()) for mode in MemoryMode],
+        **FIELD_STYLE,
+    )
+    memory_lm = ft.Dropdown(
+        label="Language model memory",
+        value=memory.lm_mode.value,
+        options=[ft.DropdownOption(key=lm.value, text=lm.value.replace("-", " ").title()) for lm in LMMode],
+        **FIELD_STYLE,
+    )
+    memory_versions = ft.Dropdown(
+        label="Max versions",
+        value=str(memory.max_versions),
+        options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)],
+        width=100,
+        **FIELD_STYLE,
+    )
+    memory_duration = ft.TextField(
+        label="Max duration (s)",
+        value=str(memory.max_duration_sec) if memory.max_duration_sec else "",
+        hint_text="No limit",
+        width=130,
+        keyboard_type=ft.KeyboardType.NUMBER,
+        **FIELD_STYLE,
+    )
+    memory_ckpt = ft.Switch(label="Gradient checkpointing (training)", value=memory.training_checkpointing, active_color=GREEN)
+    memory_train_batch = ft.Dropdown(
+        label="Training batch",
+        value=str(memory.training_max_batch),
+        options=[ft.DropdownOption(key=str(x), text=str(x)) for x in range(1, 5)],
+        width=100,
+        **FIELD_STYLE,
+    )
+    memory_train_rank = ft.Dropdown(
+        label="Max rank",
+        value=str(memory.training_max_rank),
+        options=[ft.DropdownOption(key=str(x), text=str(x)) for x in (16, 32, 64, 128, 256)],
+        width=100,
+        **FIELD_STYLE,
+    )
+    memory_train_alpha = ft.Dropdown(
+        label="Max alpha",
+        value=str(memory.training_max_alpha),
+        options=[ft.DropdownOption(key=str(x), text=str(x)) for x in (32, 64, 128, 256, 512)],
+        width=100,
+        **FIELD_STYLE,
+    )
+    advanced_memory = ft.ExpansionTile(
+        title=ft.Text("Advanced memory overrides", size=14),
+        controls=[
+            ft.Container(
+                ft.Column(
+                    [
+                        memory_lm,
+                        ft.Row([memory_versions, memory_duration], wrap=True),
+                        ft.Divider(color=BORDER),
+                        memory_ckpt,
+                        ft.Row([memory_train_batch, memory_train_rank, memory_train_alpha], wrap=True),
+                    ],
+                    spacing=12,
+                ),
+                padding=ft.Padding.only(bottom=12),
+            )
+        ],
+        bgcolor=RAISED,
+        collapsed_bgcolor=RAISED,
+        shape=ft.RoundedRectangleBorder(radius=8),
+        collapsed_shape=ft.RoundedRectangleBorder(radius=8),
+    )
+
     def close(_event: ft.Event) -> None:
         studio.page.pop_dialog()
 
@@ -44,6 +118,32 @@ def build(studio) -> ft.AlertDialog:
         studio.client = None
         studio.page.pop_dialog()
         studio.notice("Model selection saved. It will load on the next request.")
+
+    def save_memory(_event: ft.Event) -> None:
+        duration_value = memory_duration.value.strip()
+        max_duration = None
+        if duration_value:
+            try:
+                max_duration = max(30, min(600, int(duration_value)))
+            except ValueError:
+                studio.notice("Duration must be a number.", True)
+                return
+        settings = MemorySettings(
+            mode=MemoryMode(memory_preset.value),
+            lm_mode=LMMode(memory_lm.value),
+            max_versions=max(1, min(4, int(memory_versions.value))),
+            max_duration_sec=max_duration,
+            training_checkpointing=memory_ckpt.value,
+            training_max_batch=max(1, min(4, int(memory_train_batch.value))),
+            training_max_rank=max(1, min(256, int(memory_train_rank.value))),
+            training_max_alpha=max(1, min(512, int(memory_train_alpha.value))),
+        )
+        studio.runtime.save_memory_settings(settings)
+        studio.runtime.stop()
+        studio.generation.reset_client()
+        studio.client = None
+        studio.page.pop_dialog()
+        studio.notice("Memory settings saved. They will apply on the next generation.")
 
     async def update(_event: ft.Event) -> None:
         studio.notice("Checking and staging the latest ACE-Step runtime…")
@@ -222,6 +322,28 @@ def build(studio) -> ft.AlertDialog:
                 dit,
                 lm,
                 ft.Button("Save selection", icon=ft.Icons.SAVE, style=PRIMARY_BUTTON_STYLE, on_click=save),
+            ),
+            studio.card(
+                ft.Text("Memory safety", size=20, weight=ft.FontWeight.W_600),
+                ft.Text(
+                    "Preset adapts to detected hardware. Use Full only on machines with sufficient RAM."
+                    + (" Current mode may freeze low-memory machines." if memory.mode == MemoryMode.FULL else ""),
+                    color=MUTED if memory.mode != MemoryMode.FULL else WARNING,
+                    size=12,
+                ),
+                ft.Row(
+                    [
+                        ft.Icon(
+                            ft.Icons.SHIELD,
+                            color=GREEN if memory.mode == MemoryMode.SAFE else (WARNING if memory.mode == MemoryMode.FULL else MUTED),
+                        ),
+                        memory_preset,
+                        ft.Container(expand=True),
+                        ft.Button("Save memory settings", icon=ft.Icons.SAVE, style=PRIMARY_BUTTON_STYLE, on_click=save_memory),
+                    ],
+                    spacing=12,
+                ),
+                advanced_memory,
             ),
             studio.card(ft.Text("Available models", size=20, weight=ft.FontWeight.W_600), *model_rows),
             studio.card(

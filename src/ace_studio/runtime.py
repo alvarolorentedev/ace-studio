@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .hardware import detect_hardware, recommended_models
-from .models import RuntimeManifest, RuntimeProfile, RuntimeState
+from .models import LMMode, MemoryMode, MemorySettings, RuntimeManifest, RuntimeProfile, RuntimeState
 from .storage import Storage
 
 ProgressCallback = Callable[[str, float | None], None]
@@ -73,6 +73,49 @@ class RuntimeManager:
     @property
     def model_settings_file(self) -> Path:
         return self.storage.runtime_dir / "models.json"
+
+    @property
+    def memory_settings_file(self) -> Path:
+        return self.storage.runtime_dir / "memory.json"
+
+    def get_memory_settings(self) -> MemorySettings:
+        try:
+            return MemorySettings.from_dict(json.loads(self.memory_settings_file.read_text()))
+        except (OSError, ValueError, KeyError, TypeError):
+            return MemorySettings.detect_default(self.hardware)
+
+    def save_memory_settings(self, settings: MemorySettings) -> None:
+        temporary = self.memory_settings_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(settings.to_dict(), indent=2))
+        temporary.replace(self.memory_settings_file)
+
+    def memory_env(self) -> dict[str, str]:
+        settings = self.get_memory_settings()
+        env: dict[str, str] = {}
+        if settings.mode == MemoryMode.SAFE:
+            env["ACESTEP_SAVE_MEMORY"] = "1"
+        if settings.lm_mode == LMMode.DISABLED:
+            env["ACESTEP_INIT_LLM"] = "false"
+            env.pop("ACESTEP_LM_MODEL_PATH", None)
+        elif settings.lm_mode == LMMode.MINIMAL:
+            env["ACESTEP_INIT_LLM"] = "true"
+        return env
+
+    def generation_caps(self) -> dict[str, int | None]:
+        settings = self.get_memory_settings()
+        return {
+            "max_versions": settings.max_versions,
+            "max_duration_sec": settings.max_duration_sec,
+        }
+
+    def training_caps(self) -> dict[str, int | bool]:
+        settings = self.get_memory_settings()
+        return {
+            "gradient_checkpointing": settings.training_checkpointing,
+            "max_batch": settings.training_max_batch,
+            "max_rank": settings.training_max_rank,
+            "max_alpha": settings.training_max_alpha,
+        }
 
     def selected_models(self) -> tuple[str, str | None]:
         recommended = recommended_models(self.hardware)
@@ -337,14 +380,13 @@ class RuntimeManager:
                     "PYTHONPATH": os.pathsep.join([str(source), environment.get("PYTHONPATH", "")]),
                 }
             )
+            environment.update(self.memory_env())
             model, lm_model = self.selected_models()
             environment["ACESTEP_CONFIG_PATH"] = model
-            if lm_model:
+            if lm_model and environment.get("ACESTEP_INIT_LLM", "true") != "false":
                 environment["ACESTEP_LM_MODEL_PATH"] = lm_model
             if manifest.profile == RuntimeProfile.MACOS_MLX:
                 environment["ACESTEP_LM_BACKEND"] = "mlx"
-                if (self.hardware.memory_gb or 0) <= 16:
-                    environment["ACESTEP_SAVE_MEMORY"] = "1"
             if manifest.profile in {RuntimeProfile.WINDOWS_XPU, RuntimeProfile.LINUX_XPU}:
                 environment.update({"PYTORCH_DEVICE": "xpu", "TORCH_COMPILE_BACKEND": "eager"})
             bridge = self._stage_bridge(source)

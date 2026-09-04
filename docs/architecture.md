@@ -29,5 +29,6 @@ The `services/` package keeps the two workflows separate. `GenerationService` ow
 - Adapter metadata persists in SQLite. A saved active adapter is restored after runtime initialization only when its files still exist.
 - Cancellation stops polling and the local process; a later request starts a fresh authenticated client.
 - Network, runtime, validation, and filesystem errors cross service boundaries as exceptions and are presented by the active view.
+- Memory safety settings (`memory.json`) are persisted in the runtime directory and owned by `RuntimeManager`. The file controls generation and training caps (`MemoryMode`, batch, duration, checkpointing) and is read by `GenerationService` and `TrainingService` before work begins. A corrupt or missing file falls back to hardware-detected safe defaults.
 
 Tests use temporary storage, mocked processes, fake services, and a localhost HTTP server. They never require external network access, downloaded models, or accelerator hardware.

@@ -7,8 +7,8 @@ from threading import Event
 import flet as ft
 import flet.canvas as cv
 
-from ..models import TrainingRequest
-from ..theme import BORDER, DANGER_BUTTON_STYLE, FIELD_STYLE, GREEN, INPUT, MUTED, PRIMARY_BUTTON_STYLE, RAISED
+from ..models import MemoryMode, TrainingRequest
+from ..theme import BORDER, DANGER_BUTTON_STYLE, FIELD_STYLE, GREEN, INPUT, MUTED, PRIMARY_BUTTON_STYLE, RAISED, WARNING
 
 
 def build(studio) -> ft.Control:
@@ -41,6 +41,20 @@ def build(studio) -> ft.Control:
     progress = ft.ProgressBar(value=0)
     start_button = ft.Button("Train adapter", icon=ft.Icons.SCIENCE, disabled=True, style=PRIMARY_BUTTON_STYLE)
     stop_button = ft.Button("Stop training", icon=ft.Icons.STOP, visible=False, style=DANGER_BUTTON_STYLE)
+    memory = studio.runtime.get_memory_settings()
+    memory_badge_color = GREEN if memory.mode == MemoryMode.SAFE else (WARNING if memory.mode == MemoryMode.FULL else MUTED)
+    memory_badge_icon = (
+        ft.Icons.SHIELD if memory.mode == MemoryMode.SAFE
+        else (ft.Icons.WARNING if memory.mode == MemoryMode.FULL else ft.Icons.BALANCE)
+    )
+    memory_badge = ft.Row(
+        [
+            ft.Icon(memory_badge_icon, size=12, color=memory_badge_color),
+            ft.Text(f"Training: {memory.mode.value.capitalize()} mode", size=11, color=memory_badge_color),
+        ],
+        spacing=4,
+        tooltip="Training memory caps apply. Change preset in Settings.",
+    )
     review = ft.Column(visible=False, spacing=4)
     training_log = ft.Text("No training log yet.", selectable=True, max_lines=5, color=MUTED)
     loss_points: list[tuple[int, float]] = []
@@ -293,6 +307,7 @@ def build(studio) -> ft.Control:
                                         ],
                                     ),
                                     ft.Row([start_button, stop_button]),
+                                    ft.Row([memory_badge], alignment=ft.MainAxisAlignment.END),
                                     padding=18,
                                 ),
                             ],
