@@ -46,7 +46,13 @@ def build(studio) -> ft.Control:
     key = ft.Dropdown(
         label="Key",
         value="A minor",
-        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "C major", "A minor", "D major", "E minor", "F major", "G minor"]],
+        options=[ft.DropdownOption(key=x, text=x) for x in [
+            "Auto",
+            "C major", "G major", "D major", "A major", "E major", "B major",
+            "F# major", "Db major", "Ab major", "Eb major", "Bb major", "F major",
+            "A minor", "E minor", "B minor", "F# minor", "C# minor", "G# minor",
+            "D# minor", "A# minor", "F minor", "C minor", "G minor", "D minor",
+        ]],
         dense=True,
         expand=True,
         **FIELD_STYLE,
@@ -54,7 +60,7 @@ def build(studio) -> ft.Control:
     signature = ft.Dropdown(
         label="Time signature",
         value="4/4",
-        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "4/4", "3/4", "6/8"]],
+        options=[ft.DropdownOption(key=x, text=x) for x in ["Auto", "4/4", "3/4", "6/8", "5/4", "7/8"]],
         dense=True,
         expand=True,
         **FIELD_STYLE,
