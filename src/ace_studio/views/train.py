@@ -197,7 +197,7 @@ def build(studio) -> ft.Control:
             request = TrainingRequest(
                 kind.value,
                 "",
-                str(studio.storage.training_dir / "runs" / name.value.strip()),
+                "",
                 float(learning_rate.value),
                 int(epochs.value),
                 rank=int(rank.value),
@@ -239,6 +239,29 @@ def build(studio) -> ft.Control:
             progress.value = 1
             status.value = f"Adapter registered at {destination}. Load it from Settings when you are ready."
             start_button.content = "Train another adapter"
+
+            async def delete_run(_cleanup_event: ft.Event) -> None:
+                studio.page.pop_dialog()
+                try:
+                    studio.runtime.stop()
+                    studio.generation.reset_client()
+                    studio.client = None
+                    reclaimed = await asyncio.to_thread(studio.training.delete_run, name.value.strip())
+                    studio.notice(f"Deleted training checkpoints ({reclaimed / 1024 / 1024:.0f} MB).")
+                except Exception as exc:
+                    studio.notice(str(exc), True)
+
+            studio.page.show_dialog(
+                ft.AlertDialog(
+                    modal=True,
+                    title=ft.Text("Delete training checkpoints?"),
+                    content=ft.Text("Your exported adapter and dataset are kept. This permanently removes the large training run files."),
+                    actions=[
+                        ft.TextButton("Keep", on_click=lambda _e: studio.page.pop_dialog()),
+                        ft.Button("Delete checkpoints", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=delete_run),
+                    ],
+                )
+            )
         except InterruptedError:
             status.value = "Training cancelled. No adapter was registered."
             start_button.content = "Retry training"

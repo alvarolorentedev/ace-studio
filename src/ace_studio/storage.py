@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 from contextlib import closing
@@ -153,10 +154,91 @@ class Storage:
         path = Path(row["audio_path"])
         try:
             path.resolve().relative_to(self.audio_dir.resolve())
-        except ValueError:
+        except (OSError, RuntimeError, ValueError):
             return True
         path.unlink(missing_ok=True)
         return True
+
+    @staticmethod
+    def _directory_size(directory: Path) -> int:
+        total = 0
+        if not directory.is_dir() or directory.is_symlink():
+            return total
+        for root, directories, files in os.walk(directory, followlinks=False):
+            directories[:] = [name for name in directories if not (Path(root) / name).is_symlink()]
+            for name in files:
+                path = Path(root) / name
+                if not path.is_symlink():
+                    total += path.stat().st_size
+        return total
+
+    @staticmethod
+    def _inside(path: Path, directory: Path) -> bool:
+        try:
+            path.resolve().relative_to(directory.resolve())
+            return True
+        except (OSError, RuntimeError, ValueError):
+            return False
+
+    def storage_usage(self) -> dict[str, int]:
+        return {
+            "total": self._directory_size(self.root),
+            "runtime": self._directory_size(self.runtime_dir / "versions"),
+            "temporary": self._directory_size(self.runtime_dir / "tmp"),
+            "models": self._directory_size(self.models_dir),
+            "library": self._directory_size(self.audio_dir),
+            "training runs": self._directory_size(self.training_dir / "runs"),
+            "datasets": self._directory_size(self.training_dir / "datasets"),
+            "adapters": self._directory_size(self.training_dir / "adapters"),
+            "logs": self._directory_size(self.logs_dir),
+        }
+
+    def _clear_directory(self, directory: Path) -> int:
+        if not self._inside(directory, self.root):
+            raise ValueError("Can only remove ACE Studio storage")
+        reclaimed = self._directory_size(directory)
+        if directory.is_dir() and not directory.is_symlink():
+            for child in directory.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink(missing_ok=True)
+        directory.mkdir(parents=True, exist_ok=True)
+        return reclaimed
+
+    def clear_temporary_files(self) -> int:
+        return self._clear_directory(self.runtime_dir / "tmp")
+
+    def clear_training_runs(self) -> int:
+        return self._clear_directory(self.training_dir / "runs")
+
+    def delete_training_run(self, directory: Path) -> int:
+        runs = self.training_dir / "runs"
+        if not self._inside(directory, runs):
+            raise ValueError("Can only remove managed training runs")
+        if not directory.exists():
+            return 0
+        if directory.is_symlink():
+            directory.unlink()
+            return 0
+        reclaimed = self._directory_size(directory)
+        shutil.rmtree(directory)
+        return reclaimed
+
+    def delete_nonfavorite_generations(self) -> tuple[int, int]:
+        with closing(self.connect()) as connection:
+            rows = connection.execute("SELECT id, audio_path FROM generations WHERE favorite = 0").fetchall()
+            managed = [row for row in rows if self._inside(Path(row["audio_path"]), self.audio_dir)]
+            if managed:
+                connection.executemany("DELETE FROM generations WHERE id = ?", [(row["id"],) for row in managed])
+                connection.commit()
+        reclaimed = 0
+        for row in managed:
+            path = Path(row["audio_path"])
+            if path.is_file() and not path.is_symlink():
+                reclaimed += path.stat().st_size
+                path.unlink()
+        return len(managed), reclaimed
 
     def record_job(self, job_id: str, state: str, request: dict[str, Any], error: str | None = None) -> None:
         with closing(self.connect()) as connection:

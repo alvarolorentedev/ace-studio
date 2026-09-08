@@ -19,16 +19,17 @@ GenerationService ───── TrainingService
 
 The `services/` package keeps the two workflows separate. `GenerationService` owns runtime readiness, model initialization, generation/edit polling, cancellation, downloads, and library persistence. `TrainingService` owns dataset scan/edit/save, optional labeling, preprocessing, LoRA/LoKr execution, export, and adapter activation. Its one-click pipeline reports progress to the view and is the only place that sequences those training stages. Both reuse `AceClient` and `Storage`.
 
-`RuntimeManager` installs only `SUPPORTED_COMMIT`. Installation happens in a staging directory, the route compatibility probe runs before activation, and `current.json` changes only after success. The existing runtime therefore survives download, installation, or probe failures.
+`RuntimeManager` installs only `SUPPORTED_COMMIT`. Installation happens in a staging directory, the route compatibility probe runs before activation, and `current.json` changes only after success. The existing runtime therefore survives download, installation, or probe failures; after a successful activation, obsolete runtime versions are removed. It owns validated runtime and supported-model removal, while preserving models when only the runtime is uninstalled.
 
 ## State and failures
 
-- Generated and edited audio is copied into the managed library before its database record is committed.
+- Generated and edited audio from runtime temporary storage is copied into the managed library, recorded in SQLite, then the temporary source is removed, so completed tracks do not retain duplicates. External audio is copied rather than removed.
 - Edited library tracks retain a parent relationship to their source.
 - Dataset JSON, tensors, runs, and exported adapters live below the training directory.
 - Adapter metadata persists in SQLite. A saved active adapter is restored after runtime initialization only when its files still exist.
 - Cancellation stops polling and the local process; a later request starts a fresh authenticated client.
 - Network, runtime, validation, and filesystem errors cross service boundaries as exceptions and are presented by the active view.
 - Memory safety settings (`memory.json`) are persisted in the runtime directory and owned by `RuntimeManager`. The file controls generation and training caps (`MemoryMode`, batch, duration, checkpointing) and is read by `GenerationService` and `TrainingService` before work begins. A corrupt or missing file falls back to hardware-detected safe defaults.
+- `Storage` owns size reporting and cleanup for managed paths only. Settings can clear temporary files, training runs, and non-favorite managed tracks; adapters, datasets, favorites, external files, and symlink targets are preserved. Training runs use sanitized directories beneath `training/runs` and can be removed after adapter export.
 
 Tests use temporary storage, mocked processes, fake services, and a localhost HTTP server. They never require external network access, downloaded models, or accelerator hardware.

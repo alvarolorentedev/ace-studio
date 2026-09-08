@@ -5,7 +5,7 @@ from threading import Event
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from ace_studio.models import EditRequest, GenerationResult, TrainingRequest
+from ace_studio.models import EditRequest, GenerationRequest, GenerationResult, TrainingRequest
 from ace_studio.services import GenerationService, TrainingService
 from ace_studio.storage import Storage
 
@@ -123,6 +123,47 @@ class ServiceTest(unittest.TestCase):
             self.assertEqual(result.audio_paths, [str(storage.audio_dir / "job-1.wav")])
             self.assertEqual(saved["parent_id"], "original")
 
+    def test_generation_moves_runtime_temporary_audio_into_library(self):
+        with tempfile.TemporaryDirectory() as directory:
+            storage = Storage(Path(directory))
+            runtime = SimpleNamespace(
+                generation_caps=lambda: {"max_versions": 4, "max_duration_sec": None},
+                training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+            )
+            service = GenerationService(runtime, storage)
+            client = FakeClient()
+            source = storage.runtime_dir / "tmp" / "api_audio" / "result.wav"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"RIFFresult")
+            client.source = str(source)
+            service.client = client
+
+            result = service.generate(GenerationRequest("test"))
+
+            self.assertFalse(source.exists())
+            self.assertEqual(Path(result.audio_paths[0]).read_bytes(), b"RIFFresult")
+
+    def test_generation_keeps_temporary_audio_when_persistence_fails(self):
+        with tempfile.TemporaryDirectory() as directory:
+            storage = Storage(Path(directory))
+            runtime = SimpleNamespace(
+                generation_caps=lambda: {"max_versions": 4, "max_duration_sec": None},
+                training_caps=lambda: {"gradient_checkpointing": False, "max_batch": 4, "max_rank": 256, "max_alpha": 512},
+            )
+            service = GenerationService(runtime, storage)
+            client = FakeClient()
+            source = storage.runtime_dir / "tmp" / "result.wav"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"RIFFresult")
+            client.source = str(source)
+            service.client = client
+
+            with patch.object(storage, "save_generation", side_effect=OSError("database unavailable")), self.assertRaises(OSError):
+                service.generate(GenerationRequest("test"))
+
+            self.assertTrue(source.exists())
+            self.assertFalse((storage.audio_dir / "job-1.wav").exists())
+
     def test_track_aware_edit_requires_base_model(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source.wav"
@@ -185,6 +226,7 @@ class ServiceTest(unittest.TestCase):
             self.assertEqual(training.task_status("preprocess", "two")["task_id"], "two")
             self.assertEqual(training.status()["status"], "Idle")
             self.assertEqual(training.stop()["message"], "stopped")
+            self.assertEqual(training.run_directory("../My Set"), storage.training_dir / "runs" / "my-set")
 
     def test_one_click_training_pipeline_registers_without_activation(self):
         class PipelineClient(FakeClient):
@@ -220,6 +262,7 @@ class ServiceTest(unittest.TestCase):
             self.assertTrue(exported.exists())
             self.assertEqual([adapter.name for adapter in storage.adapters()], ["My Voice"])
             self.assertFalse(storage.adapters()[0].active)
+            self.assertEqual(client.calls[-1][0], str(storage.training_dir / "runs" / "my-voice"))
             self.assertEqual(
                 [update["stage"] for update in updates],
                 [

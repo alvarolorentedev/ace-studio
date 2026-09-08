@@ -45,6 +45,12 @@ class TrainingService:
         task = self._client().preprocess_dataset(str(output))
         return str(task["task_id"]), output
 
+    def run_directory(self, name: str) -> Path:
+        return self.storage.training_dir / "runs" / self._safe_name(name)
+
+    def delete_run(self, name: str) -> int:
+        return self.storage.delete_training_run(self.run_directory(name))
+
     def task_status(self, kind: str, task_id: str) -> dict[str, Any]:
         client = self._client()
         return client.auto_label_status(task_id) if kind == "label" else client.preprocess_status(task_id)
@@ -93,6 +99,7 @@ class TrainingService:
         task_id, tensor_dir = self.preprocess(name)
         wait_for_task("preprocess", task_id, "Preprocessing")
         request.tensor_dir = str(tensor_dir)
+        request.output_dir = str(self.run_directory(name))
 
         cancelled()
         report("Training", progress=0)

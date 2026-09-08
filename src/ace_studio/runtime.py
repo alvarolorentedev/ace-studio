@@ -149,6 +149,29 @@ class RuntimeManager:
     def model_installed(self, model: str) -> bool:
         return (self.storage.models_dir / model / "config.json").is_file()
 
+    def uninstall_model(self, model: str) -> None:
+        if model not in (*DIT_MODELS, *LM_MODELS):
+            raise ValueError("Unsupported ACE-Step model")
+        if model in self.selected_models():
+            raise ValueError("Select another model before uninstalling this one.")
+        target = self.storage.models_dir / model
+        if target.is_symlink():
+            target.unlink()
+        elif target.exists():
+            shutil.rmtree(target)
+
+    def uninstall_runtime(self) -> None:
+        self.stop()
+        versions = self.storage.runtime_dir / "versions"
+        if versions.is_symlink():
+            versions.unlink()
+        elif versions.exists():
+            shutil.rmtree(versions)
+        self.storage.clear_temporary_files()
+        self.current_file.unlink(missing_ok=True)
+        self.port = self.token = None
+        self.state = RuntimeState.MISSING
+
     def download_model(self, model: str, progress: ProgressCallback = lambda _message, _value: None) -> None:
         if model not in (*DIT_MODELS, *LM_MODELS):
             raise ValueError("Unsupported ACE-Step model")
@@ -325,6 +348,11 @@ class RuntimeManager:
         temporary = self.current_file.with_suffix(".tmp")
         temporary.write_text(json.dumps(manifest.to_dict(), indent=2))
         temporary.replace(self.current_file)
+        versions = self.storage.runtime_dir / "versions"
+        if versions.is_dir() and not versions.is_symlink():
+            for version in versions.iterdir():
+                if version.name != commit and version.is_dir() and not version.is_symlink():
+                    shutil.rmtree(version)
         self.state = RuntimeState.READY
         return manifest
 

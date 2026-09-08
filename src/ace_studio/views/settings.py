@@ -7,7 +7,7 @@ import flet as ft
 from ..hardware import recommended_models
 from ..models import LMMode, MemoryMode, MemorySettings
 from ..runtime import DIT_MODELS, LM_MODELS, SUPPORTED_COMMIT
-from ..theme import BORDER, FIELD_STYLE, GREEN, MUTED, PRIMARY_BUTTON_STYLE, RAISED, WARNING
+from ..theme import BORDER, DANGER_BUTTON_STYLE, FIELD_STYLE, GREEN, MUTED, PRIMARY_BUTTON_STYLE, RAISED, WARNING
 
 
 def build(studio) -> ft.AlertDialog:
@@ -17,6 +17,14 @@ def build(studio) -> ft.AlertDialog:
     selected_dit, selected_lm = studio.runtime.selected_models()
     installed_dit = [name for name in DIT_MODELS if studio.runtime.model_installed(name)]
     installed_lm = [name for name in LM_MODELS if studio.runtime.model_installed(name)]
+    usage = studio.storage.storage_usage()
+
+    def size(value: int) -> str:
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if value < 1024 or unit == "TB":
+                return f"{value:.0f} {unit}" if unit == "B" else f"{value:.1f} {unit}"
+            value /= 1024
+        return "0 B"
     dit = ft.Dropdown(
         label="Generation model",
         value=selected_dit,
@@ -106,6 +114,37 @@ def build(studio) -> ft.AlertDialog:
     def close(_event: ft.Event) -> None:
         studio.page.pop_dialog()
 
+    def reset_runtime() -> None:
+        studio.runtime.stop()
+        studio.generation.reset_client()
+        studio.client = None
+
+    def refresh() -> None:
+        studio.page.pop_dialog()
+        studio.page.show_dialog(build(studio))
+
+    def confirm(title: str, message: str, action, success: str) -> None:
+        async def remove(_event: ft.Event) -> None:
+            studio.page.pop_dialog()
+            try:
+                result = await asyncio.to_thread(action)
+                refresh()
+                studio.notice(success.format(result=result))
+            except Exception as exc:
+                studio.notice(str(exc), True)
+
+        studio.page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text(title),
+                content=ft.Text(message),
+                actions=[
+                    ft.TextButton("Cancel", on_click=lambda _e: studio.page.pop_dialog()),
+                    ft.Button("Delete", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=remove),
+                ],
+            )
+        )
+
     def save(_event: ft.Event) -> None:
         selected = [dit.value, None if lm.value == "disabled" else lm.value]
         missing = [name for name in selected if name and not studio.runtime.model_installed(name)]
@@ -176,6 +215,84 @@ def build(studio) -> ft.AlertDialog:
             detail.value = str(exc)[-100:]
         studio.page.update()
 
+    def uninstall_model(name: str) -> None:
+        def remove() -> int:
+            reset_runtime()
+            before = studio.storage.storage_usage()["models"]
+            studio.runtime.uninstall_model(name)
+            return before - studio.storage.storage_usage()["models"]
+
+        confirm(
+            f"Uninstall {name}?",
+            "This permanently removes the downloaded model and stops any current work.",
+            remove,
+            "Uninstalled model ({result:.0f} bytes reclaimed).",
+        )
+
+    def clear_temporary() -> None:
+        def remove() -> int:
+            reset_runtime()
+            return studio.storage.clear_temporary_files()
+
+        confirm(
+            "Clear temporary files?",
+            "This permanently removes intermediate files and stops any current work.",
+            remove,
+            "Cleared {result:.0f} bytes of temporary files.",
+        )
+
+    def clear_runs() -> None:
+        def remove() -> int:
+            reset_runtime()
+            return studio.storage.clear_training_runs()
+
+        confirm(
+            "Delete all training runs?",
+            "This permanently removes training checkpoints and stops any current work. Exported adapters and datasets are kept.",
+            remove,
+            "Deleted {result:.0f} bytes of training runs.",
+        )
+
+    def clear_nonfavorites() -> None:
+        def remove() -> str:
+            count, reclaimed = studio.storage.delete_nonfavorite_generations()
+            studio.views.pop(1, None)
+            return f"{count} tracks ({size(reclaimed)})"
+
+        confirm(
+            "Delete non-favorite tracks?",
+            "This permanently removes every non-favorite generated track and its managed audio file.",
+            remove,
+            "Deleted {result}.",
+        )
+
+    def uninstall_runtime() -> None:
+        async def remove(_event: ft.Event) -> None:
+            studio.page.pop_dialog()
+            try:
+                await asyncio.to_thread(studio.runtime.uninstall_runtime)
+                studio.generation.reset_client()
+                studio.client = None
+                studio.views.clear()
+                studio.show_setup()
+                studio.notice("Runtime uninstalled. Download it again from setup when you are ready.")
+            except Exception as exc:
+                studio.notice(str(exc), True)
+
+        studio.page.show_dialog(
+            ft.AlertDialog(
+                modal=True,
+                title=ft.Text("Uninstall ACE-Step runtime?"),
+                content=ft.Text(
+                    "This permanently removes the runtime and temporary files, stops any current work, and returns to setup. "
+                    "Downloaded models stay installed."
+                ),
+                actions=[
+                    ft.TextButton("Cancel", on_click=lambda _e: studio.page.pop_dialog()),
+                    ft.Button("Uninstall runtime", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=remove),
+                ],
+            )
+        )
     model_rows = []
     descriptions = {
         "acestep-v15-base": "50 steps · special tasks and fine-tuning",
@@ -188,10 +305,15 @@ def build(studio) -> ft.AlertDialog:
     for name in (*DIT_MODELS, *LM_MODELS):
         installed = studio.runtime.model_installed(name)
         detail = ft.Text(descriptions.get(name, "Supported ACE-Step model"), color=MUTED, size=11)
-        button = ft.Button(
-            "Installed" if installed else "Download", icon=ft.Icons.CHECK if installed else ft.Icons.DOWNLOAD, disabled=installed
-        )
-        button.on_click = lambda _e, n=name, b=button, d=detail: studio.page.run_task(download, n, b, d)
+        if installed and name in (selected_dit, selected_lm):
+            button = ft.Button("In use", icon=ft.Icons.CHECK, disabled=True)
+        elif installed:
+            button = ft.Button(
+                "Uninstall", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=lambda _e, n=name: uninstall_model(n)
+            )
+        else:
+            button = ft.Button("Download", icon=ft.Icons.DOWNLOAD)
+            button.on_click = lambda _e, n=name, b=button, d=detail: studio.page.run_task(download, n, b, d)
         model_rows.append(ft.ListTile(title=ft.Text(name), subtitle=detail, trailing=button))
 
     adapter_rows: list[ft.Control] = []
@@ -355,7 +477,40 @@ def build(studio) -> ft.AlertDialog:
                 ft.ListTile(
                     leading=ft.Icon(ft.Icons.FOLDER),
                     title=ft.Text(str(studio.storage.root)),
-                    subtitle=ft.Text("Runtime, models, library, training data, and logs"),
+                    subtitle=ft.Text(f"{size(usage['total'])} used by ACE Studio"),
+                ),
+                ft.ListTile(title=ft.Text("Runtime"), subtitle=ft.Text(size(usage["runtime"]))),
+                ft.ListTile(
+                    title=ft.Text("Temporary files"),
+                    subtitle=ft.Text(size(usage["temporary"])),
+                    trailing=ft.Button(
+                        "Clear", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=lambda _e: clear_temporary()
+                    ),
+                ),
+                ft.ListTile(title=ft.Text("Models"), subtitle=ft.Text(size(usage["models"]))),
+                ft.ListTile(
+                    title=ft.Text("Training runs"),
+                    subtitle=ft.Text(f"{size(usage['training runs'])} · adapters and datasets are kept"),
+                    trailing=ft.Button(
+                        "Delete all", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=lambda _e: clear_runs()
+                    ),
+                ),
+                ft.ListTile(
+                    title=ft.Text("Datasets and adapters"), subtitle=ft.Text(f"{size(usage['datasets'])} + {size(usage['adapters'])}")
+                ),
+                ft.ListTile(
+                    title=ft.Text("Generated library"),
+                    subtitle=ft.Text(f"{size(usage['library'])} · favorites are kept"),
+                    trailing=ft.Button(
+                        "Delete non-favorites",
+                        icon=ft.Icons.DELETE_OUTLINE,
+                        style=DANGER_BUTTON_STYLE,
+                        on_click=lambda _e: clear_nonfavorites(),
+                    ),
+                ),
+                ft.ListTile(title=ft.Text("Logs"), subtitle=ft.Text(size(usage["logs"]))),
+                ft.Button(
+                    "Uninstall runtime", icon=ft.Icons.DELETE_OUTLINE, style=DANGER_BUTTON_STYLE, on_click=lambda _e: uninstall_runtime()
                 ),
             ),
             studio.card(

@@ -106,20 +106,35 @@ class GenerationService:
         saved_paths: list[str] = []
         for number, source in enumerate(result.audio_paths, 1):
             target = self.storage.audio_dir / f"{task_id}-{number}.wav"
-            if Path(source).is_file():
-                shutil.copy2(source, target)
+            source_path = Path(source)
+            temporary_source = False
+            if source_path.is_file():
+                try:
+                    source_path.resolve().relative_to((self.storage.runtime_dir / "tmp").resolve())
+                except (OSError, RuntimeError, ValueError):
+                    shutil.copy2(source_path, target)
+                else:
+                    temporary_source = True
+                    shutil.copy2(source_path, target)
             else:
                 client.download_audio(source, target)
-            self.storage.save_generation(
-                f"{task_id}-{number}",
-                result.title,
-                request.task_type,
-                str(target),
-                request.prompt,
-                request.lyrics,
-                result.metadata,
-                parent_id,
-            )
+            try:
+                self.storage.save_generation(
+                    f"{task_id}-{number}",
+                    result.title,
+                    request.task_type,
+                    str(target),
+                    request.prompt,
+                    request.lyrics,
+                    result.metadata,
+                    parent_id,
+                )
+            except Exception:
+                if temporary_source:
+                    target.unlink(missing_ok=True)
+                raise
+            if temporary_source:
+                source_path.unlink(missing_ok=True)
             saved_paths.append(str(target))
         result.audio_paths = saved_paths
         self.storage.record_job(task_id, "complete", request.fields())

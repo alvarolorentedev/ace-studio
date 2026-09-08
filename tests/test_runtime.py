@@ -168,6 +168,43 @@ class RuntimeTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 runtime.select_models("not-a-model", None)
 
+    def test_model_uninstall_protects_selected_model(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            for model in ("acestep-v15-turbo", "acestep-5Hz-lm-0.6B", "acestep-5Hz-lm-1.7B"):
+                model_dir = runtime.storage.models_dir / model
+                model_dir.mkdir()
+                (model_dir / "config.json").write_text("{}")
+            runtime.select_models("acestep-v15-turbo", "acestep-5Hz-lm-0.6B")
+
+            runtime.uninstall_model("acestep-5Hz-lm-1.7B")
+            self.assertFalse((runtime.storage.models_dir / "acestep-5Hz-lm-1.7B").exists())
+            with self.assertRaisesRegex(ValueError, "Select another"):
+                runtime.uninstall_model("acestep-v15-turbo")
+            with self.assertRaises(ValueError):
+                runtime.uninstall_model("unknown")
+
+    def test_runtime_uninstall_preserves_models_and_prunes_obsolete_versions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = RuntimeManager(Storage(Path(directory)))
+            model = runtime.storage.models_dir / "acestep-v15-turbo"
+            model.mkdir()
+            (model / "config.json").write_text("{}")
+            runtime.save_memory_settings(runtime.get_memory_settings())
+            old = runtime.storage.runtime_dir / "versions" / "old"
+            current = runtime.storage.runtime_dir / "versions" / SUPPORTED_COMMIT
+            old.mkdir(parents=True)
+            current.mkdir()
+
+            runtime._activate(SUPPORTED_COMMIT, current)
+            self.assertFalse(old.exists())
+            runtime.uninstall_runtime()
+
+            self.assertFalse(runtime.current_file.exists())
+            self.assertFalse((runtime.storage.runtime_dir / "versions").exists())
+            self.assertTrue(model.exists())
+            self.assertTrue(runtime.memory_settings_file.exists())
+
     def test_missing_recommendation_falls_back_to_an_installed_model(self):
         with tempfile.TemporaryDirectory() as directory:
             runtime = RuntimeManager(Storage(Path(directory)))
