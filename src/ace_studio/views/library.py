@@ -63,6 +63,13 @@ def build(studio) -> ft.Control:
                                 ft.Icons.EDIT, tooltip="Rename track", on_click=lambda _e, track=item: studio._rename_track(track, 1)
                             ),
                             ft.IconButton(
+                                ft.Icons.DOWNLOAD,
+                                tooltip="Download track",
+                                on_click=lambda _e, p=item["audio_path"], t=item["title"]: studio.page.run_task(
+                                    studio._download_track, p, t
+                                ),
+                            ),
+                            ft.IconButton(
                                 ft.Icons.FAVORITE if item["favorite"] else ft.Icons.FAVORITE_BORDER,
                                 tooltip="Favorite",
                                 on_click=lambda _e, i=item["id"]: (studio.storage.toggle_favorite(i), load()),

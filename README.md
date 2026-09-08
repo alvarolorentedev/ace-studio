@@ -14,7 +14,7 @@ Download the installer for your platform from [GitHub Releases](https://github.c
 - Windows: installer EXE
 - Debian/Ubuntu: `.deb` package
 
-Release installers are unsigned. Your operating system may ask you to explicitly allow the app during installation.
+macOS releases are signed and notarized by Apple.
 
 ## What you can do
 
@@ -124,6 +124,10 @@ make build-macos
 make build-windows
 make build-linux
 ```
+
+### Sign and notarize macOS releases
+
+This project distributes its macOS build outside the Mac App Store, so use a **Developer ID Application** certificate—not a provisioning profile or Mac App Distribution certificate. The bundle identifier is `dev.alvarolorente.ace_studio`.
 
 ## Troubleshooting
 

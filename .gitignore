@@ -11,3 +11,4 @@ runtime/
 *.log
 .flet/
 src/assets/bin/
+apple-secrets/
