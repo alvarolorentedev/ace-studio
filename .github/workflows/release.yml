@@ -50,7 +50,8 @@ jobs:
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
         run: |
           app_path="build/macos/ACE Studio.app"
-          entitlements_path="build/flutter/macos/Runner/Release.entitlements"
+          entitlements_path="$RUNNER_TEMP/ace-studio-entitlements.plist"
+          plutil -convert xml1 -o "$entitlements_path" build/flutter/macos/Runner/Release.entitlements
           find "$app_path" -type f -print0 | while IFS= read -r -d '' file_path; do
             if file "$file_path" | grep -q 'Mach-O'; then
               codesign --force --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$file_path"
